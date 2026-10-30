@@ -1,0 +1,16 @@
+server:
+  port: 3001
+spring:
+  application:
+    name: xin-ai-api
+  # TODO(API): 本地 PG/Redis 地址按 docker compose 补齐
+  datasource:
+    url: jdbc:postgresql://localhost:5432/xinai
+    username: xinai
+    password: xinai
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+logging:
+  level:
+    com.xin.ai: DEBUG

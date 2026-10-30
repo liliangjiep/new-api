@@ -1,0 +1,1 @@
+{ "name": "xin-ai-docs", "version": "1.0.0", "private": true, "scripts": { "gen": "node scripts/_gen_xin_docs.js" }, "dependencies": { "docx": "^9.0.0" } }

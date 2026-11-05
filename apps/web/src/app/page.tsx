@@ -46,7 +46,7 @@ const HOME_THEME_STYLE = {
 } as React.CSSProperties;
 
 /*
- * 首页 1:1 复刻 new-api（2026-10-30 实测逐字复刻）
+ * 首页 1:1 复刻 new-ai（2026-10-30 实测逐字复刻）
  *
  * 原站 DOM 层级（1600×900 实测）：
  *  div.workspace-shell
@@ -612,7 +612,7 @@ export default function HomePage() {
               <div className="home-hero-title relative flex w-full min-w-0 flex-col items-center text-center">
                 <h1 className="home-hero-title-text inline-block max-w-full whitespace-normal break-words text-[28px] font-semibold not-italic leading-9 text-[var(--color-home-hero-title)] max-sm:text-[24px] max-sm:leading-8 [html[data-home-layout=compact]_&]:text-[24px] [html[data-home-layout=compact]_&]:leading-8">
                   <span className="home-hero-title-brand text-[var(--color-home-hero-accent-text)]">
-                    new-api
+                    new-ai
                   </span>
                   <span className="home-hero-title-separator">，</span>
                   <span className="home-hero-title-tagline">

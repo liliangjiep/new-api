@@ -19,7 +19,7 @@ export type { NavSection };
 export { ASSETS_ICON, RAIL_ITEMS, FLOATING_NAV };
 
 /**
- * 原站 new-api 工作台外壳（2026-10-30 实测逐字复刻）
+ * 原站 new-ai 工作台外壳（2026-10-30 实测逐字复刻）
  *
  * body
  *  └─ div.workspace-shell  flex-row

@@ -13,7 +13,7 @@ export const useThemeStore = create<ThemeState>()(
       theme: DEFAULT_THEME,
       setTheme: (theme) => set({ theme }),
     }),
-    { name: "new-api.theme" }
+    { name: "new-ai.theme" }
   )
 );
 
@@ -30,7 +30,7 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set({ user }),
       clear: () => set({ user: null }),
     }),
-    { name: "new-api.auth" }
+    { name: "new-ai.auth" }
   )
 );
 

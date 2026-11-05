@@ -1,19 +1,19 @@
 @import "tailwindcss";
 
 /* ============================================================
-   new-api Design System — "Optical Bench"
+   new-ai Design System — "Optical Bench"
    专业媒体制作控制台：深色优先、信号青强调、发丝边框、等宽数字
    ============================================================ */
 
 @theme {
-  /* 原站 new-api 实测字体栈（1:1，2026-10-30 实测 html/body 计算样式） */
+  /* 原站 new-ai 实测字体栈（1:1，2026-10-30 实测 html/body 计算样式） */
   --font-ui: -apple-system-body, ui-sans-serif, -apple-system, "system-ui",
     "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei",
     Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI",
     "Segoe UI Emoji", "Segoe UI Symbol";
   --font-display: var(--font-ui);
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  /* 原站 .font-credit 实测字体栈（new-api，2026-11-02） */
+  /* 原站 .font-credit 实测字体栈（new-ai，2026-11-02） */
   --font-credit: "DIN Alternate", DIN_Alternate, "Arial Narrow", system-ui, sans-serif;
 
   --radius-xs: 2px;
@@ -37,7 +37,7 @@
   --color-success: hsl(var(--success));
   --color-info: hsl(var(--info));
 
-  /* —— 原站别名（new-api 同名 token，便于逐字复刻 class） —— */
+  /* —— 原站别名（new-ai 同名 token，便于逐字复刻 class） —— */
   --color-background: hsl(var(--background));
   /* 原站 v3：--color-foreground 实为 --color-text(#181818)，但 .bg-foreground
      单独映射到 --color-accent(#272727)。
@@ -62,7 +62,7 @@
   /* —— 原站容器宽度 —— */
   --container-shell: 108rem;
 
-  /* —— 原站全局运行时变量（实测 new-api root） —— */
+  /* —— 原站全局运行时变量（实测 new-ai root） —— */
   --global-operation-notice-height: 0px;   /* 顶部运营公告条高度，无公告时 0 */
   --global-open-panel-height: 0px;         /* 展开的面板占用高度 */
   --toolbar-size: 32px;                    /* 语音工具条按钮尺寸 */
@@ -70,7 +70,7 @@
   --home-composer-input-min-height: 70px;
   --home-discover-margin: 40px;
 
-  /* —— 原站 new-api 设计 token（1:1 复刻所需） —— */
+  /* —— 原站 new-ai 设计 token（1:1 复刻所需） —— */
   --color-bg-subtle: hsl(var(--bg-subtle));
   --color-bg-action: hsl(var(--bg-action));
   --color-bg-subtle-action: hsl(var(--bg-subtle-action));
@@ -89,7 +89,7 @@
 }
 
 /* ============================================================
-   原站 new-api :root 实测 token（逐值 1:1，2026-10-30 抓取
+   原站 new-ai :root 实测 token（逐值 1:1，2026-10-30 抓取
    .recon/static/98d0769010f05a67.css :root 块）
    ============================================================ */
 :root {
@@ -384,7 +384,7 @@ html {
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  /* 原站 new-api 实测字体栈（1:1）：
+  /* 原站 new-ai 实测字体栈（1:1）：
      -apple-system-body, ui-sans-serif, -apple-system, "system-ui",
      "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei",
      Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI",
@@ -456,12 +456,12 @@ body {
 }
 
 /* ============================================================
-   原站默认主题（new-api 实测色板，1:1）
+   原站默认主题（new-ai 实测色板，1:1）
    bg #fcfcfc / card #fcfcfc / fg #181818 / muted #717171
    subtle #8f8f8f / line rgba(0,0,0,.06) / 主按钮 #272727
    ============================================================ */
-[data-theme="new-api"] {
-  /* 原站 new-api 实测色板（逐值 1:1） */
+[data-theme="new-ai"] {
+  /* 原站 new-ai 实测色板（逐值 1:1） */
   --background: 0 0% 98.8%;        /* #fcfcfc body */
   --surface: 0 0% 100%;            /* #ffffff 原站 --color-surface */
   --surface-2: 0 0% 93.3%;         /* #eeeeee bg-subtle-action */
@@ -524,7 +524,7 @@ body {
 }
 
 /* ============================================================
-   原站容器宽度（new-api 实测：.max-w-shell）
+   原站容器宽度（new-ai 实测：.max-w-shell）
    min(95rem, calc(100% - clamp(1.5rem, 4vw, 3.5rem)))
    ============================================================ */
 .max-w-shell {
@@ -635,7 +635,7 @@ body {
 }
 
 /* ============================================================
-   原站 ui-button 体系（new-api 实测 class 逐字复刻）
+   原站 ui-button 体系（new-ai 实测 class 逐字复刻）
 
    原站 .ui-button 只是「基类」，具体尺寸/字号/圆角全部由 Tailwind 工具类
    承担（实测原站 class：

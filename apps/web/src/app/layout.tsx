@@ -5,8 +5,8 @@ import { ToastHost } from "@/components/features/ToastHost";
 import "./globals.css";
 
 /**
- * 原站 new-api 实测（2026-10-30）：
- *   <title>new-api，懂制造业的AI创作工具</title>
+ * 原站 new-ai 实测（2026-10-30）：
+ *   <title>new-ai，懂制造业的AI创作工具</title>
  *   <html lang="zh-CN" data-scroll-behavior="smooth" data-color-mode="light" data-site-tone="light">
  *   路由标题：/toolbox → AI 工具箱；/toolbox/image-generation → AI 图片；
  *            /toolbox/video-generation → AI 视频；/toolbox/ecommerce-image-set → AI 商详套图；
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   // 路由标题统一由 lib/page-titles.ts + WorkspaceShell 提供；
   // 未使用 WorkspaceShell 的页面（如 404）各自 export metadata.title。
   description:
-    "new-api，懂制造业的AI创作工具。上传素材 → 选择工作流 → 生成 → 下载 → 投放的完整闭环.",
+    "new-ai，懂制造业的AI创作工具。上传素材 → 选择工作流 → 生成 → 下载 → 投放的完整闭环.",
   keywords: ["AI 视频生成", "AI 图片生成", "数字人", "商品图", "视频创作"],
 };
 
@@ -42,7 +42,7 @@ export default function RootLayout({
   return (
     <html
       lang="zh-CN"
-      data-theme="new-api"
+      data-theme="new-ai"
       data-scroll-behavior="smooth"
       data-color-mode="light"
       data-site-tone="light"

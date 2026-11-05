@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 /**
  * 原站 /agent-chat 会 302 到 /agent-cloud（2026-11-01 实测：
- *   请求 https://new-api/agent-chat → 最终 URL https://new-api/agent-cloud，title「Agent」）。
+ *   请求 https://new-ai/agent-chat → 最终 URL https://new-ai/agent-cloud，title「Agent」）。
  * 这里保持一致：服务端直接重定向，避免出现两个不同的 Agent 页。
  */
 export default function AgentChatPage() {

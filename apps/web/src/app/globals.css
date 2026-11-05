@@ -6,14 +6,17 @@
    ============================================================ */
 
 @theme {
-  --font-ui: var(--f-ui), "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
-  --font-display: var(--f-display), "PingFang SC", "Microsoft YaHei", serif;
-  --font-mono: var(--f-mono), "SFMono-Regular", Consolas, monospace;
+  /* 原站 susu.da-ai.cc 实测字体栈（1:1，2026-10-30 实测 html/body 计算样式） */
+  --font-ui: -apple-system-body, ui-sans-serif, -apple-system, "system-ui",
+    "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei",
+    Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI",
+    "Segoe UI Emoji", "Segoe UI Symbol";
+  --font-display: var(--font-ui);
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  /* 原站 .font-credit 实测字体栈（susu.da-ai.cc，2026-11-02） */
+  --font-credit: "DIN Alternate", DIN_Alternate, "Arial Narrow", system-ui, sans-serif;
 
   --radius-xs: 2px;
-  --radius-sm: 3px;
-  --radius-md: 5px;
-  --radius-lg: 8px;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
@@ -34,10 +37,44 @@
   --color-success: hsl(var(--success));
   --color-info: hsl(var(--info));
 
+  /* —— 原站别名（susu.da-ai.cc 同名 token，便于逐字复刻 class） —— */
+  --color-background: hsl(var(--background));
+  /* 原站 v3：--color-foreground 实为 --color-text(#181818)，但 .bg-foreground
+     单独映射到 --color-accent(#272727)。
+     v4 的 --color-foreground 同时生成 text-/bg- foreground，
+     所以这里取 accent，再在 utilities 层把 .text-foreground 单独改回前景色。 */
+  --color-foreground: hsl(var(--accent));
+  --color-text: hsl(var(--foreground));
+  --color-text-muted: hsl(var(--muted));
+  --color-text-subtle: hsl(var(--subtle));
+  --color-bg-muted: hsl(var(--bg-subtle-action));
+  --color-interaction-bg: hsl(var(--interaction));
+
+  /* —— 原站圆角（.recon/static/98d0769010f05a67.css :root 实测） —— */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-3xl: 16px;
+  --radius-4xl: 20px;
+
+  /* —— 原站容器宽度 —— */
+  --container-shell: 108rem;
+
+  /* —— 原站全局运行时变量（实测 susu.da-ai.cc root） —— */
+  --global-operation-notice-height: 0px;   /* 顶部运营公告条高度，无公告时 0 */
+  --global-open-panel-height: 0px;         /* 展开的面板占用高度 */
+  --toolbar-size: 32px;                    /* 语音工具条按钮尺寸 */
+  --home-composer-editor-height: 82px;     /* 首页 composer 输入区高度 */
+  --home-composer-input-min-height: 70px;
+  --home-discover-margin: 40px;
+
   /* —— 原站 susu.da-ai.cc 设计 token（1:1 复刻所需） —— */
   --color-bg-subtle: hsl(var(--bg-subtle));
   --color-bg-action: hsl(var(--bg-action));
   --color-bg-subtle-action: hsl(var(--bg-subtle-action));
+  --color-subtle-action: hsl(var(--bg-subtle-action));
   --color-interaction: hsl(var(--interaction));
   --color-on-accent: hsl(var(--on-accent));
   --color-accent-deep: hsl(var(--accent-deep));
@@ -49,6 +86,99 @@
   --shadow-soft: 0 2px 12px rgb(0 0 0 / 0.05);
   --shadow-glow: 0 4px 16px rgb(24 24 24 / 0.14);
   --shadow-dialog: 0 22px 60px rgb(15 15 15 / 0.16);
+}
+
+/* ============================================================
+   原站 susu.da-ai.cc :root 实测 token（逐值 1:1，2026-10-30 抓取
+   .recon/static/98d0769010f05a67.css :root 块）
+   ============================================================ */
+:root {
+  /* 原站颜色别名 —— 供 tailwind 工具类 bg-action / text-muted 等使用 */
+  --color-action: hsl(var(--bg-action));
+  --color-accent-muted: rgb(39 39 39 / 0.1);
+  --color-brand: hsl(var(--accent));
+  --color-brand-hover: #3f3f3f;
+  --color-brand-muted: rgb(39 39 39 / 0.1);
+  --color-canvas-dot: rgb(24 24 24 / 0.14);
+  --color-conversation-text: #181818;
+  --color-highlight-bg: #e7f2ff;
+  --color-line-white: initial;
+  --color-page-ambient-tl: rgb(24 24 24 / 0.045);
+  --color-skeleton-border: rgb(24 24 24 / 0.1);
+  --color-skeleton-container: color-mix(
+    in srgb,
+    var(--color-bg-subtle-action) 88%,
+    var(--color-text) 6%
+  );
+  --color-warm: #f97316;
+  --color-warm-deep: #c2410c;
+  --color-warm-muted: rgb(249 115 22 / 0.1);
+
+  /* 原站滚动条 */
+  --color-scrollbar: rgb(0 0 0 / 0.1);
+  --color-scrollbar-hover: rgb(0 0 0 / 0.2);
+
+  /* 原站画布（canvas）token —— 实测 .recon/static/0ecfcdcb7ef126e0.css :root */
+  --canvas-bg: #12171a;
+  --canvas-bg-deep: #0d1114;
+  --canvas-surface: rgb(255 255 255 / 0.08);
+  --canvas-surface-strong: rgb(255 255 255 / 0.12);
+  --canvas-line: rgb(39 59 80 / 0.14);
+  --canvas-text: rgb(25 38 54 / 0.92);
+  --canvas-text-muted: rgb(71 89 111 / 0.72);
+  --canvas-text-toolbar: color-mix(
+    in srgb,
+    var(--canvas-text) 68%,
+    var(--canvas-text-muted) 32%
+  );
+
+  /* 原站首页（.home-*） */
+  --color-home-page-bg: transparent;
+  --color-home-hero-title: #0f0f0f;
+  --color-home-hero-accent-text: #0471fe;
+  --color-home-entry-heading: #181818;
+  --color-home-entry-description: #717171;
+  --color-home-entry-text: #444444;
+  --color-home-composer-bg: #ffffff;
+  --color-home-composer-border: #ffffff;
+  --color-home-scene-card-bg: #ffffff;
+  --color-home-scene-card-border: var(--color-line);
+  --color-home-scene-media-bg: #ebebeb;
+  --color-home-mobile-scene-card-bg: #ffffff;
+  --color-home-mobile-scene-media-bg: var(--color-bg-subtle-action);
+  --color-home-tool-icon-bg: transparent;
+  --color-home-tool-icon-border: var(--color-line);
+  --color-home-tool-icon-fg: currentColor;
+  --color-home-tool-icon-hover-bg: var(--color-bg-action);
+  --color-home-tool-name: currentColor;
+  --shadow-home-composer: var(--shadow-premium);
+  --shadow-home-scene-card: none;
+  --shadow-home-tool-icon: var(--shadow-soft);
+
+  /* 原站首页辉光渐变 */
+  --gradient-home-glow: radial-gradient(
+    ellipse 50% 100% at center 8%,
+    #fdfcfc 0%,
+    #9dd2ff 50%,
+    rgba(157, 210, 255, 0) 78%
+  );
+
+  /* 原站移动端底部栏 */
+  --workspace-mobile-bottombar-bg: rgba(255, 255, 255, 0.78);
+
+  /* 原站其它阴影 */
+  --shadow-auth-primary: 0 4px 14px rgb(24 24 24 / 0.2);
+  --shadow-auth-primary-hover: 0 6px 18px rgb(24 24 24 / 0.26);
+  --shadow-avatar-default: 0 8px 20px rgb(24 24 24 / 0.16);
+  --shadow-avatar-foot: 0 6px 16px rgb(24 24 24 / 0.18);
+  --shadow-avatar-panel: 0 5px 14px rgb(24 24 24 / 0.16);
+  --shadow-avatar-sidebar: 0 5px 14px rgb(24 24 24 / 0.14);
+  --shadow-avatar-sidebar-hover: 0 8px 20px rgb(24 24 24 / 0.18);
+  --shadow-avatar-sidebar-open: 0 7px 18px rgb(24 24 24 / 0.16);
+  --shadow-soft-zinc: 0 6px 18px rgb(24 24 24 / 0.08);
+
+  /* 原站圆角补充 */
+  --radius-xl: 10px;
 }
 
 /* ---------- Theme tokens ---------- */
@@ -222,12 +352,29 @@
 }
 
 /* ---------- Base ---------- */
-* {
-  border-color: var(--border);
+/* 原站是 Tailwind v3：preflight 为 `*,:after,:before{border:0 solid #e5e7eb}`，
+   即默认边框色 = #e5e7eb（不是 currentColor，也不是主题色）。
+   我们是 Tailwind v4（默认 currentColor），必须显式还原，否则全站边框变前景色。
+   实测：orig=rgb(229,231,235) vs ours=rgb(24,24,24)。
+   ⚠️ 这条规则必须放进 `@layer base`（v3 preflight 同层），
+   否则未分层规则会**压过所有 Tailwind 工具类**（如 .border-current 实测
+   orig=rgb(24,24,24) vs ours=rgb(229,231,235)）。
+   需要主题语义边框时用 .border-line / .border-line-strong。 */
+@layer base {
+  * {
+    border-color: #e5e7eb;
+  }
 }
 
 html {
   color-scheme: dark;
+  /* 原站实测 html 的 font-family 与 body 同栈：
+     Tailwind v4 preflight 把 font-family 写在 html 上 → 必须显式覆盖，
+     否则 body 继承到的是 v4 默认栈（BlinkMacSystemFont…）。 */
+  font-family: -apple-system-body, ui-sans-serif, -apple-system, "system-ui",
+    "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei",
+    Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI",
+    "Segoe UI Emoji", "Segoe UI Symbol";
 }
 [data-theme="dawn"],
 [data-theme="sand"] {
@@ -237,10 +384,22 @@ html {
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: var(--font-ui);
+  /* 原站 susu.da-ai.cc 实测字体栈（1:1）：
+     -apple-system-body, ui-sans-serif, -apple-system, "system-ui",
+     "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei",
+     Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI",
+     "Segoe UI Emoji", "Segoe UI Symbol"
+     我们原来是 Tailwind v4 默认栈（BlinkMacSystemFont/Segoe UI/Roboto…），
+     在 Windows 上字形宽度不同 → 全站文本宽度/换行位置偏移。 */
+  font-family: -apple-system-body, ui-sans-serif, -apple-system, "system-ui",
+    "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei",
+    Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI",
+    "Segoe UI Emoji", "Segoe UI Symbol";
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  font-feature-settings: "tnum" 1, "cv05" 1;
+  /* 原站实测：text-rendering:auto / font-feature-settings:normal
+     我们之前设了 optimizelegibility + tnum/cv05，会改变字形宽度与数字形态。 */
+  text-rendering: auto;
+  font-feature-settings: normal;
 }
 
 /* 细网格纹理：给深色底面加质感，避免纯色死板 */
@@ -297,17 +456,204 @@ body {
 }
 
 /* ============================================================
-   原站 ui-button 体系（susu.da-ai.cc 实测 class 逐字复刻）
+   原站默认主题（susu.da-ai.cc 实测色板，1:1）
+   bg #fcfcfc / card #fcfcfc / fg #181818 / muted #717171
+   subtle #8f8f8f / line rgba(0,0,0,.06) / 主按钮 #272727
    ============================================================ */
+[data-theme="susu"] {
+  /* 原站 susu.da-ai.cc 实测色板（逐值 1:1） */
+  --background: 0 0% 98.8%;        /* #fcfcfc body */
+  --surface: 0 0% 100%;            /* #ffffff 原站 --color-surface */
+  --surface-2: 0 0% 93.3%;         /* #eeeeee bg-subtle-action */
+  --surface-3: 0 0% 94.5%;         /* #f1f1f1 bg-action */
+  --foreground: 0 0% 9.4%;         /* #181818 */
+  --muted: 0 0% 44.3%;             /* #717171 */
+  --subtle: 0 0% 56.1%;            /* #8f8f8f */
+  --border: 0 0% 0% / 0.06;        /* rgba(0,0,0,.06) */
+  --border-strong: 0 0% 0% / 0.1;  /* rgba(0,0,0,.1) */
+  --accent: 0 0% 15.29%;           /* #272727 原站实测 rgb(39,39,39) */
+  --accent-fg: 0 0% 98%;           /* #fafafa */
+  --accent-soft: 0 0% 96%;
+  --bg-subtle: 0 0% 97.6%;         /* #f9f9f9 */
+  --bg-action: 0 0% 94.5%;         /* #f1f1f1 */
+  --bg-subtle-action: 0 0% 93.3%;  /* #eeeeee */
+  --interaction: 0 0% 0% / 0.06;   /* rgba(0,0,0,.06) */
+  --on-accent: 0 0% 98%;           /* #fafafa */
+  --accent-deep: 0 0% 9.4%;        /* #181818 */
+  --model-option-icon-bg: 0 0% 0% / 0.04;
+  --skeleton: 0 0% 83%;            /* #d4d4d4 */
+  --skeleton-muted: 0 0% 77%;      /* #c4c4c4 */
+  --danger: 0 72% 42%;             /* #dc2626 */
+  --warning: 25 95% 55%;           /* #f97316 */
+  --success: 142 71% 45%;
+  --info: 217 91% 60%;
+}
+
+/* 卡片（编辑面板 / 预览面板 / 队列卡）—— 原站 .card 无背景/无阴影
+   ⚠️ 必须写 `border-width: 0` 而不是 `border: 0`：
+   `border: 0` 是简写 → 会把 border-color 重置为 currentColor（= 前景色 #181818），
+   实测导致所有 .card 元素边框变黑（orig=rgb(229,231,235) / ours=rgb(24,24,24)）。
+   同理 `border-style: none` 才不会覆盖颜色。 */
+.card {
+  background-color: transparent;
+  border-width: 0;
+  border-style: none;
+  box-shadow: none;
+}
+
+/* 原站阴影变量 */
+:root {
+  --shadow-premium: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+
+/* 原站主按钮实色（#272727 / #fafafa） */
+.ui-button-primary {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--on-accent));
+}
+
+/* 隐藏滚动条但保留滚动 */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ============================================================
+   原站容器宽度（susu.da-ai.cc 实测：.max-w-shell）
+   min(95rem, calc(100% - clamp(1.5rem, 4vw, 3.5rem)))
+   ============================================================ */
+.max-w-shell {
+  max-width: min(95rem, calc(100% - clamp(1.5rem, 4vw, 3.5rem)));
+}
+
+/* ============================================================
+   原站语义工具类（与 Tailwind 默认值不同的部分）
+
+   ⚠️ 必须放进 `@layer utilities`（v4）——否则未分层规则会压过 Tailwind 工具类。
+   原站（v3）语义工具类与普通工具类同级，按「后出现者胜 / 同值则工具类胜组件类」，
+   v4 里 utilities 层同层，Tailwind 生成的工具类顺序在后 → 覆盖我们的别名，
+   与原站行为一致。
+
+   颜色值全部改为直接引用原站 CSS 变量（而非 hsl(var(--x))），
+   以保证与原站**逐字节一致**：
+     原站 :root --color-bg:#fcfcfc / --color-surface:#ffffff / --color-line:rgba(0,0,0,.06)
+     原站 .bg-surface 是 color-mix(surface, transparent) 语义
+   ============================================================ */
+@layer utilities {
+  .text-muted {
+    color: hsl(var(--muted));
+  }
+  .text-subtle {
+    color: hsl(var(--subtle));
+  }
+  .text-foreground {
+    color: hsl(var(--foreground));
+  }
+  .bg-muted {
+    background-color: hsl(var(--bg-subtle-action));
+  }
+  .hover\:bg-muted:hover {
+    background-color: hsl(var(--bg-subtle-action));
+  }
+  .bg-interaction {
+    background-color: hsl(var(--interaction));
+  }
+  .bg-line {
+    background-color: hsl(var(--border));
+  }
+  .border-line {
+    border-color: hsl(var(--border));
+  }
+  .border-line-strong {
+    border-color: hsl(var(--border-strong));
+  }
+  /* 原站 .bg-surface = --color-surface(#ffffff)，且支持 /60 /90 等透明度后缀 */
+  .bg-surface {
+    background-color: hsl(var(--surface));
+  }
+  /* 原站 .bg-foreground 实际映射到 --color-accent(#272727)，不是前景色！ */
+  .bg-foreground {
+    background-color: hsl(var(--accent));
+  }
+  .border {
+    border-width: 1px;
+    border-style: solid;
+  }
+  .\!border {
+    border-width: 1px !important;
+    border-style: solid !important;
+  }
+  .\!shadow-none {
+    box-shadow: none !important;
+  }
+  .font-base {
+    font-weight: 400;
+  }
+
+  /* —— 原站 bg-action / bg-accent 等别名 —— */
+  .bg-action {
+    background-color: hsl(var(--bg-action));
+  }
+  .hover\:bg-action:hover {
+    background-color: hsl(var(--bg-action));
+  }
+  .bg-accent {
+    background-color: hsl(var(--accent));
+  }
+  .text-accent {
+    color: hsl(var(--accent));
+  }
+  .text-accent-deep {
+    color: hsl(var(--accent-deep));
+  }
+  .text-on-accent {
+    color: hsl(var(--on-accent));
+  }
+  .bg-accent-muted {
+    background-color: rgb(39 39 39 / 0.1);
+  }
+  .text-accent-muted {
+    color: rgb(39 39 39 / 0.1);
+  }
+  .bg-background {
+    background-color: hsl(var(--background));
+  }
+  .bg-subtle {
+    background-color: hsl(var(--bg-subtle));
+  }
+  .bg-subtle-action {
+    background-color: hsl(var(--bg-subtle-action));
+  }
+  .font-credit {
+    font-family: var(--font-credit);
+  }
+}
+
+/* ============================================================
+   原站 ui-button 体系（susu.da-ai.cc 实测 class 逐字复刻）
+
+   原站 .ui-button 只是「基类」，具体尺寸/字号/圆角全部由 Tailwind 工具类
+   承担（实测原站 class：
+     ui-button ui-button-primary inline-flex items-center justify-center
+     px-5 py-3 text-sm transition-all duration-200 disabled:pointer-events-none
+     disabled:opacity-55 rounded-xl border-0 bg-accent font-semibold
+     tracking-wide text-on-accent shadow-glow
+   ）
+   所以基类**不能**写 padding / font-size / border-radius，否则会与工具类
+   叠加（实测 ours: radius 12px vs orig 10px、font 14px vs 12px、h 43 vs 40）。
+   ============================================================ */
+@layer components {
 .ui-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  border-radius: 0.75rem;
-  padding: 0.75rem 1.25rem;
-  font-size: 0.875rem;
-  transition: all 200ms ease;
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .ui-button:disabled {
   pointer-events: none;
@@ -332,6 +678,15 @@ body {
   background-color: rgb(0 0 0 / 0.035);
   color: hsl(var(--accent-deep));
 }
+.ui-button-secondary {
+  border-width: 0;
+  background-color: hsl(var(--surface-2));
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+.ui-button-secondary:hover {
+  background-color: hsl(var(--surface-3));
+}
 .ui-button-outline {
   border-width: 1px;
   font-weight: 500;
@@ -340,18 +695,32 @@ body {
 .ui-button-outline:hover {
   background-color: hsl(var(--surface-2));
 }
+}
 
-.shadow-premium {
-  box-shadow: var(--shadow-premium);
-}
-.shadow-soft {
-  box-shadow: var(--shadow-soft);
-}
-.shadow-glow {
-  box-shadow: var(--shadow-glow);
-}
-.shadow-dialog {
-  box-shadow: var(--shadow-dialog);
+/* 原站 v3 的 .shadow-* 全部走 --tw-shadow 变量；
+   v4 里同名工具类已经存在且值不同（.shadow-sm 默认更重）。
+   我们在 utilities 层显式覆盖为原站值，且顺序在后 → 与原站一致。 */
+@layer utilities {
+  .shadow-premium {
+    box-shadow: var(--shadow-premium);
+  }
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  .shadow-dialog {
+    box-shadow: var(--shadow-dialog);
+  }
+  /* 原站 v3: .shadow-sm = 0 1px 2px 0 rgb(0 0 0/.05) */
+  .shadow-sm {
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  }
+  /* 原站 v3: .rounded-full = 9999px（v4 默认 calc(infinity*1px)） */
+  .rounded-full {
+    border-radius: 9999px;
+  }
 }
 
 /* 骨架屏微光 */
@@ -371,6 +740,20 @@ body {
 }
 .rise {
   animation: bench-rise 0.5s var(--ease-out-expo) both;
+}
+
+/* 原站：复刻方式面板进出动画（原站 <style data-styled-jsx> 内联 keyframes） */
+@keyframes generation-skill-panel-in {
+  0% { opacity: 0; transform: translateY(-0.5rem) scaleY(0.96); }
+  100% { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+@keyframes generation-skill-panel-out {
+  0% { opacity: 1; transform: translateY(0) scaleY(1); }
+  100% { opacity: 0; transform: translateY(-0.5rem) scaleY(0.96); }
+}
+.generation-skill-search-input::-webkit-search-cancel-button {
+  display: none;
+  -webkit-appearance: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

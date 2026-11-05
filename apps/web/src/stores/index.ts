@@ -34,6 +34,23 @@ export const useAuthStore = create<AuthState>()(
   )
 );
 
+/**
+ * 全局登录弹窗开关（2026-11-01）
+ * 原站侧栏右下角的「登录」按钮点击后弹出 .modal-login-shell 登录/注册弹窗。
+ * 这里用全局 store，让任意路由的侧栏按钮都能打开同一个弹窗。
+ */
+interface LoginModalState {
+  open: boolean;
+  show: () => void;
+  hide: () => void;
+}
+
+export const useLoginModalStore = create<LoginModalState>()((set) => ({
+  open: false,
+  show: () => set({ open: true }),
+  hide: () => set({ open: false }),
+}));
+
 // M1-06 画布状态：选中节点 / 缩放 / 脏标记
 // 行内注释1：只存 UI 瞬态，不持久化，避免版本冲突污染 localStorage
 interface CanvasState {

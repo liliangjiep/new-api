@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ExampleCarousel,
@@ -14,6 +14,8 @@ import {
   ToolboxShell,
 } from "@/components/features/BenchWorkspace";
 import { PopoverSelect, TallPopoverSelect } from "@/components/features/PopoverSelect";
+import { AssetPickerModal, type AssetItem } from "@/components/features/AssetPickerModal";
+import { MentionEditor } from "@/components/features/MentionEditor";
 import { useToast } from "@/components/features/ToastHost";
 import { cn } from "@/lib/cn";
 
@@ -69,7 +71,7 @@ const EXAMPLE_ORDER = [
   "收尾图 / CTA",
 ];
 const EXAMPLES = Array.from({ length: 12 }, (_, i) => ({
-  src: `/images/ec/ecommerce-detail-example-${String(i + 1).padStart(2, "0")}.jpg`,
+  src: `/images/ec/examples/ecommerce-detail-example-${String(i + 1).padStart(2, "0")}.jpg`,
   alt: `${EXAMPLE_ORDER[i]}参考示例 ${i + 1}`,
 }));
 
@@ -96,8 +98,9 @@ export default function EcommerceImageSetPage() {
       count: DEFAULT_COUNTS[p] ?? 0,
     }))
   );
-  const [slots, setSlots] = useState<Record<string, number>>({ product: 0, person: 0, background: 0 });
-  const [lang, setLang] = useState("none");
+  const [slotAssets, setSlotAssets] = useState<Record<string, AssetItem[]>>({ product: [], person: [], background: [] });
+  const [slotPickerKey, setSlotPickerKey] = useState<string | null>(null);
+  const [lang, setLang] = useState("zh");
   const [ratio, setRatio] = useState("3:4");
   const [note, setNote] = useState("");
   const [model, setModel] = useState("LC Image 2.5 Pro");
@@ -129,9 +132,9 @@ export default function EcommerceImageSetPage() {
     });
 
   const validate = () => {
-    if (slots.product === 0) return "请先上传商品图";
+    if ((slotAssets.product ?? []).length === 0) return "请先上传商品图";
     for (const r of SLOT_ROLES) {
-      if (slots[r] > SLOT_MAX[r]) return `${SLOT_LABEL[r]}图最多 ${SLOT_MAX[r]} 张，请移除超出的素材`;
+      if ((slotAssets[r] ?? []).length > SLOT_MAX[r]) return `${SLOT_LABEL[r]}图最多 ${SLOT_MAX[r]} 张，请移除超出的素材`;
     }
     if (total === 0) return "请至少设置一种图片类型的张数";
     return null;
@@ -154,9 +157,10 @@ export default function EcommerceImageSetPage() {
   };
 
   return (
+    <>
     <ToolboxShell
       editor={
-        <div className={PANEL}>
+        <div className={`${PANEL} ecommerce-image-set-configuration-panel !gap-0`}>
           <div className="ecommerce-config-root relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col gap-4">
             <div className={`${PANEL_HEADER} ecommerce-config-header`}>
               <ToolHeader
@@ -170,69 +174,115 @@ export default function EcommerceImageSetPage() {
                       count: DEFAULT_COUNTS[p] ?? 0,
                     }))
                   );
-                  setSlots({ product: 0, person: 0, background: 0 });
+                  setSlotAssets({ product: [], person: [], background: [] });
                   setNote("");
                 }}
               />
             </div>
 
-            <div className={`${PANEL_BODY} ecommerce-config-content -mt-2.5 flex flex-col gap-4 pb-4 pt-2.5`}>
+            <div
+              className="ecommerce-config-content -mt-2.5 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-y-none pb-4 pt-2.5 scrollbar-none"
+              data-reference-slot-preview-boundary="true"
+              data-reference-card-deck-boundary="true"
+            >
               {/* —— 参考槽位：64×64 卡片，标签在下 —— */}
               <section className="ecommerce-image-set-reference-section min-w-0 shrink-0">
-                <div className="reference-slot-list flex w-fit max-w-full min-w-0 items-start gap-0">
-                  {SLOT_ROLES.map((r, i) => (
-                    <div key={r} className="reference-slot-card group/reference-slot relative flex w-16 flex-col items-center">
-                      {i > 0 && (
-                        <span
-                          className="reference-slot-divider absolute right-0 top-1 h-12 w-px bg-line"
-                          aria-hidden
-                        />
-                      )}
-                      <button
-                        type="button"
-                        aria-label={`添加${SLOT_LABEL[r]}${r === "product" ? " · 必填" : ""}`}
-                        onClick={() =>
-                          setSlots((p) => ({ ...p, [r]: Math.min(SLOT_MAX[r], p[r] + 1) }))
-                        }
-                        className="reference-slot-card-stage pointer-events-none relative z-[1] size-16 overflow-hidden rounded-xl border border-line bg-surface"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={SLOT_COVERS[r]}
-                          alt=""
-                          className="reference-slot-cover-image h-full w-full object-cover"
-                        />
-                        <span className="reference-slot-cover-upload-icon absolute bottom-1 right-1 flex size-4 items-center justify-center rounded-full bg-black/45 text-[10px] text-white">
-                          +
-                        </span>
-                      </button>
-                      <div className="reference-slot-label mt-1 flex h-4 max-w-max shrink-0 items-center gap-0.5">
-                        <span className="reference-slot-title text-[10px] text-[#555]">
-                          {SLOT_LABEL[r]}
-                        </span>
-                        {r === "product" ? (
-                          <span className="reference-slot-required text-[10px] text-[#888]">· 必填</span>
-                        ) : (
-                          <span className="reference-slot-optional ml-0.5 text-[10px] text-[#888]">可选</span>
+                <div
+                  data-reference-slot-preview-anchor="true"
+                  className="reference-slot-uploader relative flex w-full min-w-0 flex-1 items-start overflow-visible"
+                  aria-busy="false"
+                  style={
+                    {
+                      "--reference-slot-card-size": "64px",
+                      "--reference-slot-preview-top":
+                        "calc(var(--reference-slot-card-size) + 1.5rem)",
+                    } as React.CSSProperties
+                  }
+                >
+                  <div
+                    className="reference-slot-list flex w-fit max-w-full min-w-0 items-start sm:pl-[var(--reference-slot-list-padding-left)] gap-3.5"
+                    style={
+                      {
+                        "--reference-slot-list-padding-left": "2.1640625px",
+                      } as React.CSSProperties
+                    }
+                  >
+                    {SLOT_ROLES.map((r, i) => (
+                      <Fragment key={r}>
+                        {i > 0 && (
+                          <span className="reference-slot-divider mt-2 h-[calc(var(--reference-slot-card-size)-16px)] w-px shrink-0 self-start bg-line max-sm:invisible" />
                         )}
-                      </div>
-                    </div>
-                  ))}
+                        <section
+                          data-reference-slot-key={r}
+                          data-reference-drop-target-id={`slot:${r}`}
+                          data-reference-drop-solt-key={r}
+                          className="reference-slot-card group/reference-slot relative flex w-[var(--reference-slot-card-size)] shrink-0 flex-col items-center hover:z-[80] cursor-pointer max-sm:w-fit"
+                        >
+                          <button
+                            type="button"
+                            aria-label={`添加${SLOT_LABEL[r]}${r === "product" ? " · 必填" : ""}`}
+                            onClick={() => setSlotPickerKey(r)}
+                            className="reference-slot-upload-hitarea absolute inset-0 z-0 disabled:cursor-default rounded-xl"
+                          />
+                          <div className="reference-slot-card-stage pointer-events-none relative z-[1] h-[var(--reference-slot-card-size)] w-[var(--reference-slot-card-size)] shrink-0">
+                            <div className="reference-slot-trigger absolute inset-0 overflow-hidden border border-line bg-subtle shadow-sm transition-colors group-hover/reference-slot:border-[#999] rounded-xl ">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={slotAssets[r]?.[0]?.thumb ?? slotAssets[r]?.[0]?.url ?? SLOT_COVERS[r]}
+                                alt=""
+                                draggable={false}
+                                className="reference-slot-cover-image h-full w-full object-cover"
+                              />
+                              {(slotAssets[r] ?? []).length > 1 ? (
+                                <span className="absolute left-1 top-1 rounded bg-black/60 px-1 py-0.5 text-[9px] font-semibold text-white">
+                                  +{(slotAssets[r] ?? []).length - 1}
+                                </span>
+                              ) : null}
+                              <span className="reference-slot-cover-upload-icon absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#5c5c5c] text-white shadow-sm" aria-hidden="true">
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  strokeWidth={1.5}
+                                  stroke="currentColor"
+                                  aria-hidden
+                                  data-slot="icon"
+                                  className="h-2.5 w-2.5 stroke-2"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"
+                                  />
+                                </svg>
+                              </span>
+                            </div>
+                          </div>
+                          <span className="reference-slot-label mt-1 flex h-4 max-w-max shrink-0 items-center justify-center whitespace-nowrap bg-transparent text-[10px] font-medium leading-none">
+                            <span className="reference-slot-title text-[#555]">
+                              添加{SLOT_LABEL[r]}
+                              {r === "product" ? " · 必填" : ""}
+                            </span>
+                            {r === "product" ? null : (
+                              <span className="reference-slot-optional ml-0.5 text-[#888]">(可选)</span>
+                            )}
+                          </span>
+                        </section>
+                      </Fragment>
+                    ))}
+                  </div>
                 </div>
               </section>
 
               {/* —— 选择模块：3 列网格，每格 = 缩略图 + 名称 + 数量步进器 —— */}
               <section className="ecommerce-image-set-type-grid flex shrink-0 flex-col gap-2">
                 <div className="ecommerce-image-set-type-grid-heading flex flex-wrap items-center justify-between gap-1">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <h3 className="shrink-0 text-xs font-semibold text-foreground">选择模块</h3>
-                    {err === "请至少设置一种图片类型的张数" && (
-                      <p className="text-[11px] text-danger" role="status">
-                        请至少设置一种图片类型的张数
-                      </p>
-                    )}
+                  <div className="ecommerce-image-set-type-grid-title-row flex min-w-0 flex-wrap items-center gap-2">
+                    <h3 className="ecommerce-image-set-type-grid-title shrink-0 text-xs font-semibold text-foreground">
+                      选择模块
+                    </h3>
                   </div>
-                  <span className="text-[11px] tabular-nums text-muted">
+                  <span className="ecommerce-image-set-type-grid-summary text-[11px] tabular-nums text-muted">
                     已选 {selCount} 类，共 {total} 张
                   </span>
                 </div>
@@ -260,7 +310,7 @@ export default function EcommerceImageSetPage() {
                       <div className="ecommerce-image-set-type-grid-header pointer-events-none relative z-[1] flex min-w-0 flex-1 items-stretch gap-2 p-2">
                         <div
                           className={cn(
-                            "ecommerce-image-set-type-grid-example pointer-events-auto size-10 shrink-0 overflow-hidden rounded",
+                            "ecommerce-image-set-type-grid-example pointer-events-auto h-10 w-10 shrink-0 overflow-hidden rounded",
                             s.enabled ? "" : "saturate-50"
                           )}
                         >
@@ -296,13 +346,16 @@ export default function EcommerceImageSetPage() {
                                   if (/^\d+$/.test(v)) change(s.modulePurpose, { count: Number(v) });
                                 }}
                                 onClick={(e) => e.stopPropagation()}
-                                className="ecommerce-type-count-input h-5 w-7 min-w-0 px-1 text-xs font-semibold tabular-nums text-foreground disabled:opacity-40"
+                                className={cn(
+                                  "ecommerce-type-count-input h-5 w-7 min-w-0 px-1 text-xs font-semibold tabular-nums text-foreground disabled:opacity-40 max-sm:flex-1 cursor-pointer bg-transparent text-left",
+                                  s.enabled && s.count > 0 && "max-sm:cursor-text"
+                                )}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
-                      <div className="ecommerce-type-count-step-buttons pointer-events-auto relative z-[1] invisible flex w-7 shrink-0 flex-col border-l border-[#ddd] bg-surface/70 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100">
+                      <div className="ecommerce-type-count-step-buttons pointer-events-auto relative z-[1] invisible flex w-7 shrink-0 flex-col border-l border-[#ddd] bg-surface/70 opacity-0 transition-opacity max-sm:visible max-sm:opacity-100 group-hover:visible group-hover:opacity-100">
                         <span className="ecommerce-type-count-divider pointer-events-none absolute inset-x-0 top-1/2 z-[1] h-px bg-[#ddd]" aria-hidden />
                         <button
                           type="button"
@@ -314,7 +367,22 @@ export default function EcommerceImageSetPage() {
                           }}
                           className="ecommerce-type-count-increase grid min-h-0 flex-1 cursor-pointer place-items-center text-muted transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-30"
                         >
-                          +
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={1.5}
+                            stroke="currentColor"
+                            aria-hidden
+                            data-slot="icon"
+                            className="h-2.5 w-2.5"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="m4.5 15.75 7.5-7.5 7.5 7.5"
+                            />
+                          </svg>
                         </button>
                         <button
                           type="button"
@@ -326,7 +394,22 @@ export default function EcommerceImageSetPage() {
                           }}
                           className="ecommerce-type-count-decrease grid min-h-0 flex-1 cursor-pointer place-items-center text-muted transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-30"
                         >
-                          −
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={1.5}
+                            stroke="currentColor"
+                            aria-hidden
+                            data-slot="icon"
+                            className="h-2.5 w-2.5"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                            />
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -342,6 +425,7 @@ export default function EcommerceImageSetPage() {
                   onChange={setLang}
                   ariaLabel="图片文案"
                   className="ecommerce-text-language min-w-0"
+                  compact
                   options={[
                     { value: "none", label: "无文案" },
                     { value: "zh", label: "中文" },
@@ -354,6 +438,27 @@ export default function EcommerceImageSetPage() {
                   onChange={setRatio}
                   ariaLabel="图片比例"
                   className="ecommerce-aspect-ratio min-w-0"
+                  compact
+                  summary={
+                    <>
+                      <span className="pointer-events-none flex h-full shrink-0 items-center text-[11px] font-normal leading-none text-muted [&>svg]:block">
+                        图片比例
+                      </span>
+                      <span className="pointer-events-none flex shrink-0 text-muted [&>svg]:block">
+                        <span
+                          className="aspect-ratio-mini-frame inline-flex shrink-0 items-center justify-center"
+                          aria-hidden="true"
+                          style={{ width: "14px", height: "14px" }}
+                        >
+                          <span
+                            className="aspect-ratio-mini-frame-outline rounded-[1px] border-[1.35px] border-current"
+                            style={{ width: "10.5px", height: "14px" }}
+                          />
+                        </span>
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{ratio}</span>
+                    </>
+                  }
                   options={[
                     { value: "3:4", label: "3:4" },
                     { value: "1:1", label: "1:1" },
@@ -366,26 +471,52 @@ export default function EcommerceImageSetPage() {
 
               {/* —— 补充说明 —— */}
               <section className="ecommerce-extra-instruction flex flex-1 flex-col gap-2" aria-label="补充说明（选填）">
-                <div className="ecommerce-extra-instruction-editor flex flex-1 flex-col overflow-hidden rounded-lg border bg-surface transition">
-                  <textarea
+                <div className="ecommerce-extra-instruction-editor flex flex-col overflow-hidden rounded-lg border bg-surface transition flex-1">
+                  <MentionEditor
                     value={note}
-                    onChange={(e) => setNote(e.target.value)}
+                    onChange={(v) => setNote(v.slice(0, 1000))}
                     placeholder="补充说明(可选)：卖点方向、目标人群、禁用元素、希望呈现的风格"
-                    className="min-h-[92px] w-full flex-1 resize-none bg-transparent p-2 text-xs leading-6 outline-none placeholder:text-fg-subtle"
+                    hideSpeechSlot
+                    rootClassName="markdown-mention-editor-root ui-markdown-mention-editor relative flex min-h-0 flex-1 flex-col"
+                    placeholderClassName="pointer-events-none absolute z-[1] text-xs leading-6 text-muted"
+                    className="milkdown-editor-root MilkdownMentionEditor_editor__JP4BW min-h-0 h-full w-full flex-1 cursor-text overflow-y-auto  px-2 py-2 text-xs leading-6 text-foreground [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden "
                   />
-                  <div className="flex items-center justify-end gap-2 border-t border-line px-2 py-1.5">
-                    <button type="button" className="text-[11px] text-muted">
-                      语音输入
-                    </button>
+                  <div className="markdown-mention-editor-speech min-w-0 shrink-0 px-1 py-1">
+                    <div
+                      className="speech-input-controls flex min-h-[var(--toolbar-size,32px)] w-full min-w-0 shrink-0 items-center justify-end gap-2 text-foreground max-sm:min-h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:min-h-[var(--toolbar-size,44px)] pointer-events-none"
+                      data-speech-active="false"
+                      role="group"
+                      aria-label="语音输入控制"
+                    >
+                      <span className="ui-hover-tooltip-trigger inline-flex items-center justify-center outline-none">
+                        <button
+                          type="button"
+                          aria-label="语音输入"
+                          onClick={() => push({ tone: "neutral", title: "正在聆听…（演示）" })}
+                          className="speech-input-controls-microphone flex h-[var(--toolbar-size,32px)] w-[var(--toolbar-size,32px)] shrink-0 touch-manipulation items-center justify-center rounded-full max-sm:h-[var(--toolbar-size,44px)] max-sm:w-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:w-[var(--toolbar-size,44px)] pointer-events-auto text-muted hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={1.5}
+                            stroke="currentColor"
+                            aria-hidden
+                            data-slot="icon"
+                            className="h-[var(--toolbar-icon-size,20px)] w-[var(--toolbar-icon-size,20px)]"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z"
+                            />
+                          </svg>
+                        </button>
+                      </span>
+                    </div>
                   </div>
                 </div>
               </section>
-
-              {err && err !== "请至少设置一种图片类型的张数" && (
-                <p className="ecommerce-config-reference-error text-[11px] text-danger" role="status">
-                  {err}
-                </p>
-              )}
 
               {/* —— 模型 / 图片设置 —— */}
               <div className="ecommerce-config-selectors relative z-[300] grid shrink-0 grid-cols-2 gap-2">
@@ -394,10 +525,28 @@ export default function EcommerceImageSetPage() {
                   value={model}
                   onChange={setModel}
                   ariaLabel="模型"
-                  className="min-w-0"
+                  className="generation-model-picker relative min-w-0"
+                  icon={
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      aria-hidden
+                      data-slot="icon"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z"
+                      />
+                    </svg>
+                  }
                   summary={
                     <span className="model-summary-text mt-px flex min-w-0 items-baseline gap-1.5">
-                      <span className="model-summary-title min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] font-semibold leading-snug text-foreground">
+                      <span className="model-summary-title min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[clamp(8px,2.2vw,10px)] font-semibold leading-snug text-foreground">
                         {model}
                       </span>
                     </span>
@@ -418,11 +567,29 @@ export default function EcommerceImageSetPage() {
                   }}
                   ariaLabel="图片设置"
                   align="end"
-                  className="min-w-0"
+                  className="generation-settings-picker relative min-w-0"
+                  icon={
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      aria-hidden
+                      data-slot="icon"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"
+                      />
+                    </svg>
+                  }
                   summary={
                     <span className="mt-px flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-[10px] font-semibold leading-snug tabular-nums text-foreground">
                       <span className="shrink-0 tabular-nums">{resolution}</span>
-                      <span className="shrink-0">高</span>
+                      <span className="ecommerce-image-quality-summary shrink-0">高</span>
                       <span aria-hidden>·</span>
                       <span className="shrink-0">{format}</span>
                     </span>
@@ -436,16 +603,17 @@ export default function EcommerceImageSetPage() {
                 />
               </div>
             </div>
+          </div>
 
-            <div className="ecommerce-config-submit sticky bottom-0 z-[2] flex shrink-0 flex-col">
-              <SubmitBar
-                label={results.length ? "再次生成商品图" : "立即生成商品图"}
-                credits={err ? null : total * 8}
-                disabled={!!err}
-                loading={busy}
-                onClick={gen}
-              />
-            </div>
+          <div className="ecommerce-config-submit sticky bottom-0 z-[2] flex shrink-0 flex-col">
+            <SubmitBar
+              label={results.length ? "再次生成商品图" : "立即生成商品图"}
+              credits={err ? null : total * 8}
+              disabled={!!err}
+              loading={busy}
+              onClick={gen}
+              bare
+            />
           </div>
         </div>
       }
@@ -459,7 +627,17 @@ export default function EcommerceImageSetPage() {
                 <ExampleCarousel
                   title="参考示例"
                   description="按 图片类型 串联完整商详图结构，帮助你快速理解生成方向"
+                  descriptionNode={
+                    <p className="result-example-description-line">
+                      按{" "}
+                      <strong className="result-example-description-emphasis font-bold text-foreground">
+                        图片类型
+                      </strong>{" "}
+                      串联完整商详图结构，帮助你快速理解生成方向
+                    </p>
+                  }
                   images={EXAMPLES}
+                  variant="carousel"
                 />
               ),
             },
@@ -467,8 +645,26 @@ export default function EcommerceImageSetPage() {
               key: "favorites",
               label: "收藏",
               panel: (
-                <div className="flex h-full items-center justify-center p-6 text-center text-xs text-muted">
-                  请先登录再查看收藏任务。
+                <div className="favorite-batch-login flex min-h-0 flex-1 flex-col items-center justify-center gap-3.5 rounded-[1.8rem]  px-6 py-10 text-center">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                    aria-hidden
+                    data-slot="icon"
+                    className="favorite-batch-login-icon h-20 w-20 shrink-0 text-subtle opacity-[0.55]"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"
+                    />
+                  </svg>
+                  <p className="favorite-batch-login-text text-sm font-normal text-subtle opacity-90">
+                    请先登录再查看收藏任务。
+                  </p>
                 </div>
               ),
             },
@@ -477,15 +673,23 @@ export default function EcommerceImageSetPage() {
           onTabChange={setTab}
         />
       }
-      queue={
-        <QueuePanel>
-          <ul className="space-y-2">
-            <li className="rounded-lg border border-dashed border-line bg-surface-2 p-3 text-xs text-muted">
-              还没有任务。生成完成后，成品会出现在这里。
-            </li>
-          </ul>
-        </QueuePanel>
-      }
+      queue={<QueuePanel />}
     />
+      <AssetPickerModal
+        open={slotPickerKey !== null}
+        kind="image"
+        title="选择图片参考"
+        subtitle="参考图片会保存至资产库，处理期间始终可见。"
+        maxSelect={slotPickerKey ? (SLOT_MAX[slotPickerKey] ?? 4) : 4}
+        onClose={() => setSlotPickerKey(null)}
+        onConfirm={(assets) => {
+          if (slotPickerKey) {
+            const key = slotPickerKey;
+            const max = SLOT_MAX[key] ?? 4;
+            setSlotAssets((p) => ({ ...p, [key]: assets.slice(0, max) }));
+          }
+        }}
+      />
+    </>
   );
 }

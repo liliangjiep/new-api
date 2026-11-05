@@ -67,24 +67,30 @@ export function PopoverSelect({
         <button
           type="button"
           aria-label={ariaLabel ?? label}
+          aria-haspopup="listbox"
           aria-expanded={open}
           disabled={disabled}
           onClick={() => setOpen((v) => !v)}
           className={cn(
-            "toolbox-selector-trigger relative flex h-8 w-full min-w-0 cursor-pointer list-none items-center gap-2 rounded-lg border px-2 py-2 text-left text-xs font-medium text-fg transition hover:border-line-strong hover:bg-surface-2",
+            "relative flex w-full min-w-0 items-center gap-2 text-left font-medium text-foreground transition rounded-lg border   shadow-sm cursor-pointer h-8 min-h-[2rem] text-[12px] leading-tight pl-2 pr-8",
             triggerClassName
           )}
         >
           {summary ?? (
             <>
-              <span className="shrink-0 text-muted">{label}</span>
-              <span className="min-w-0 truncate font-semibold">{cur?.label ?? value}</span>
+              <span className="pointer-events-none flex h-full shrink-0 items-center text-[11px] font-normal leading-none text-muted [&>svg]:block">
+                {label}
+              </span>
+              {icon !== undefined && (
+                <span className="pointer-events-none flex shrink-0 text-muted [&>svg]:block">
+                  {icon}
+                </span>
+              )}
+              <span className="min-w-0 flex-1 truncate">{cur?.label ?? value}</span>
             </>
           )}
-          <Chevron />
-        </button>
-
-        {open && (
+          <ChevronCompact />
+        </button>        {open && (
           <div
             role="listbox"
             className={cn(
@@ -110,26 +116,31 @@ export function PopoverSelect({
   }
 
   return (
-    <div ref={ref} className={cn("relative min-w-0", className)}>
+    <div ref={ref} className={cn("contents", className)}>
       <button
         type="button"
-        aria-label={ariaLabel ?? (cur ? `${label} ${cur.label}` : label)}
+        data-open={open}
         aria-expanded={open}
         aria-haspopup="dialog"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "toolbox-selector-trigger flex h-[52px] w-full cursor-pointer list-none items-center gap-2 rounded-xl border px-2 py-2 text-left text-[11px] font-medium text-fg shadow-none outline-none ring-0 transition hover:border-line-strong hover:bg-surface-2 data-[open=true]:border-line-strong data-[open=true]:bg-surface-2",
+          "toolbox-selector-trigger flex h-[52px] w-full cursor-pointer list-none items-center gap-2 rounded-xl border px-2 py-2 text-left text-[11px] font-medium text-foreground shadow-none outline-none ring-0 transition hover:border-line-strong hover:bg-surface/90 data-[open=true]:border-line-strong data-[open=true]:bg-surface/90",
           triggerClassName
         )}
       >
         {icon !== undefined && (
-          <span className="toolbox-selector-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted shadow-none" aria-hidden>
+          <span
+            className="toolbox-selector-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted shadow-none"
+            aria-hidden
+          >
             {icon}
           </span>
         )}
         <span className="toolbox-selector-text min-w-0 flex-1 text-left">
-          <span className="toolbox-selector-label block text-[10px] font-semibold leading-tight text-muted">{label}</span>
+          <span className="toolbox-selector-label block text-[10px] font-semibold leading-tight text-muted">
+            {label}
+          </span>
           {summary ?? (
             <span className="mt-px flex min-w-0 items-baseline gap-1.5">
               <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[clamp(8px,2.2vw,10px)] font-semibold leading-snug text-fg">
@@ -166,6 +177,23 @@ export function PopoverSelect({
   );
 }
 
+function ChevronCompact() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      aria-hidden
+      data-slot="icon"
+      className="pointer-events-none absolute top-1/2 z-[1] right-2 h-3.5 w-3.5 -translate-y-1/2 shrink-0 text-muted transition-transform "
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+    </svg>
+  );
+}
+
 function Chevron() {
   return (
     <svg
@@ -175,7 +203,8 @@ function Chevron() {
       strokeWidth={1.5}
       stroke="currentColor"
       aria-hidden
-      className="toolbox-selector-chevron h-3 w-3 shrink-0 text-muted transition-transform duration-200"
+      data-slot="icon"
+      className="toolbox-selector-chevron h-3 w-3 shrink-0 text-muted transition-transform duration-200 "
     >
       <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
     </svg>

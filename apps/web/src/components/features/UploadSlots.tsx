@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Upload, X, FileVideo, FileImage, FileAudio } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatBytes } from "@/lib/domain";
+import { AssetPickerModal, type AssetItem } from "@/components/features/AssetPickerModal";
 
 export interface UploadedFile {
   id: string;
@@ -16,8 +17,8 @@ export interface UploadedFile {
 }
 
 /**
- * 参考素材上传槽位
- * 两段式直传：先取 upload-policy → 直传 OSS → complete 回调
+ * 参考素材上传槽位（原站：资产库弹窗选择，非直传 input）
+ * 点击槽位 → AssetPickerModal（全部/我上传的/AI生成的 + 上传素材），确认后回填
  * TODO(API): 接后端 /assets/upload-policy 与 /assets/complete
  */
 export function UploadSlots({
@@ -37,47 +38,31 @@ export function UploadSlots({
   value: UploadedFile[];
   onChange: (files: UploadedFile[] | ((prev: UploadedFile[]) => UploadedFile[])) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
 
-  const addFiles = (fileList: FileList | null) => {
-    if (!fileList) return;
+  const pickerKind = accept.includes("video") && accept.includes("image")
+    ? ("media" as const)
+    : accept.includes("video")
+      ? ("video" as const)
+      : accept.includes("audio")
+        ? ("audio" as const)
+        : ("image" as const);
+
+  const applyAssets = (assets: AssetItem[]) => {
+    if (assets.length === 0) return;
     const room = max - value.length;
-    const incoming = Array.from(fileList).slice(0, room);
-    const next: UploadedFile[] = incoming.map((f, i) => ({
-      id: `tmp_${Date.now()}_${i}`,
-      name: f.name,
-      size: f.size,
-      kind: f.type.startsWith("video")
-        ? "video"
-        : f.type.startsWith("audio")
-          ? "audio"
-          : "image",
-      previewUrl: f.type.startsWith("image") ? URL.createObjectURL(f) : undefined,
-      status: "uploading",
-      progress: 0,
+    const incoming = assets.slice(0, room);
+    const next: UploadedFile[] = incoming.map((a, i) => ({
+      id: a.id || `asset_${Date.now()}_${i}`,
+      name: a.name,
+      size: 0,
+      kind: a.kind,
+      previewUrl: a.thumb ?? (a.kind !== "audio" ? a.url : undefined),
+      status: "done",
+      progress: 100,
     }));
     onChange([...value, ...next]);
-
-    // TODO(API): 换成真实上传 + 进度回调
-    next.forEach((f) => {
-      let p = 0;
-      const timer = setInterval(() => {
-        p += 20;
-        if (p >= 100) {
-          clearInterval(timer);
-          onChange((prev) =>
-            prev.map((x) =>
-              x.id === f.id ? { ...x, status: "done", progress: 100 } : x
-            )
-          );
-        } else {
-          onChange((prev) =>
-            prev.map((x) => (x.id === f.id ? { ...x, progress: p } : x))
-          );
-        }
-      }, 120);
-    });
   };
 
   const remove = (id: string) =>
@@ -103,7 +88,7 @@ export function UploadSlots({
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          if (!full) addFiles(e.dataTransfer.files);
+          if (!full) setPickerOpen(true);
         }}
         className={cn(
           "rounded-sm border border-dashed p-3 transition-colors",
@@ -113,26 +98,15 @@ export function UploadSlots({
           full && "opacity-50"
         )}
       >
-        <input
-          ref={inputRef}
-          type="file"
-          accept={accept}
-          multiple={multiple}
-          className="sr-only"
-          onChange={(e) => {
-            if (!full) addFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
         <button
           type="button"
           disabled={full}
-          onClick={() => inputRef.current?.click()}
+          onClick={() => setPickerOpen(true)}
           className="flex w-full flex-col items-center gap-1.5 py-4 text-center disabled:cursor-not-allowed"
         >
           <Upload className="size-4 text-fg-subtle" aria-hidden />
           <span className="text-xs text-fg-muted">
-            {full ? "槽位已满" : "点击上传或拖拽到此处"}
+            {full ? "槽位已满" : "点击从资产库选择或上传"}
           </span>
           {hint && <span className="text-[11px] text-fg-subtle">{hint}</span>}
         </button>
@@ -162,7 +136,7 @@ export function UploadSlots({
                   {f.name}
                 </span>
                 <span className="tabular shrink-0 text-[10px] text-fg-subtle">
-                  {formatBytes(f.size)}
+                  {f.size > 0 ? formatBytes(f.size) : ""}
                 </span>
               </div>
               {f.status === "uploading" && (
@@ -185,6 +159,16 @@ export function UploadSlots({
           ))}
         </ul>
       )}
+
+      <AssetPickerModal
+        open={pickerOpen}
+        kind={pickerKind}
+        title={pickerKind === "video" ? "选择参考视频" : pickerKind === "audio" ? "选择参考音频" : pickerKind === "media" ? "选择参考素材" : "选择图片参考"}
+        subtitle="参考素材会保存至资产库，处理期间始终可见。"
+        maxSelect={multiple ? Math.max(1, max - value.length) : 1}
+        onClose={() => setPickerOpen(false)}
+        onConfirm={applyAssets}
+      />
     </div>
   );
 }

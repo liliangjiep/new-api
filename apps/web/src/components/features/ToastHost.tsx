@@ -29,13 +29,18 @@ export function ToastHost({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={{ push }}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2" aria-live="polite">
-        {items.map((t) => (
-          <div key={t.id} className="pointer-events-auto">
-            <Toast tone={t.tone} title={t.title} description={t.description} onClose={() => setItems((p) => p.filter((x) => x.id !== t.id))} />
-          </div>
-        ))}
-      </div>
+      {items.length > 0 ? (
+        <div
+          className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-80 flex-col gap-2"
+          aria-live="polite"
+        >
+          {items.map((t) => (
+            <div key={t.id} className="pointer-events-auto">
+              <Toast tone={t.tone} title={t.title} description={t.description} onClose={() => setItems((p) => p.filter((x) => x.id !== t.id))} />
+            </div>
+          ))}
+        </div>
+      ) : null}
     </ToastCtx.Provider>
   );
 }

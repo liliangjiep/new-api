@@ -123,3 +123,7 @@ tmp_*.tsx
 tmp_*.ts
 tmp_*.js
 scripts_probe.py
+
+# ===== Recon cache (local only, 276MB+) =====
+.recon/
+

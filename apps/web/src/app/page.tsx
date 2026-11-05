@@ -2,67 +2,433 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-
-import { useState } from "react";
-import {
-  ArrowUp,
-  ChevronDown,
-  Clapperboard,
-  Droplets,
-  Eraser,
-  Heart,
-  ImageIcon,
-  ImagePlus,
-  LayoutDashboard,
-  Plus,
-  Sparkles,
-  UserRound,
-} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { WorkspaceShell } from "@/components/features/WorkspaceShell";
+import { DiscoverWaterfall } from "@/components/features/DiscoverWaterfall";
+import { LoginModal } from "@/components/features/LoginModal";
+import { useToast } from "@/components/features/ToastHost";
+// import { useAuthStore } from "@/stores"; // 本地联调放行：首页不再读登录态
+import { DISCOVER_ITEMS } from "@/app/discover-data";
 import { cn } from "@/lib/cn";
-import { WorkspaceRail } from "@/components/features/BenchWorkspace";
+
+/**
+ * 原站 .page-home 内联主题变量（2026-11-01 实测逐字对齐）。
+ * data-site-theme=minimal / data-site-tone=light / data-home-layout=spotlight
+ */
+const HOME_THEME_STYLE = {
+  "--site-home-bg": "#fcfcfc",
+  "--site-home-surface": "#ffffff",
+  "--site-home-text": "#171717",
+  "--site-home-text-muted": "#727272",
+  "--site-home-accent": "#171717",
+  "--site-home-on-accent": "#ffffff",
+  "--color-accent": "#171717",
+  "--color-accent-deep": "#171717",
+  "--color-accent-muted": "color-mix(in srgb, #171717 10%, transparent)",
+  "--color-on-accent": "#ffffff",
+  "--color-brand": "#171717",
+  "--color-brand-hover": "color-mix(in srgb, #171717 85%, black)",
+  "--color-brand-muted": "color-mix(in srgb, #171717 10%, transparent)",
+  "--color-home-hero-accent-text": "#0471fe",
+  "--gradient-home-spotlight-bg": "none",
+  "--gradient-home-glow":
+    "radial-gradient(ellipse 50% 100% at center 8%, #fdfcfc 0%, #9dd2ff 50%, transparent 78%)",
+  "--gradient-home-spotlight-mask": "linear-gradient(180deg, transparent 45%, #fcfcfc 100%)",
+  "--color-bg-action":
+    "color-mix(in srgb, var(--site-home-surface) 94%, var(--site-home-text))",
+  "--color-home-tool-icon-hover-bg": "var(--color-bg-action)",
+  "--color-home-card-bg": "var(--site-home-surface)",
+  "--composer-send-bg": "#171717",
+  "--composer-send-fg": "#ffffff",
+  "--home-decoration-width": "0px",
+  "--home-decoration-duration": "250ms",
+  "--home-actions-width": "0px",
+} as React.CSSProperties;
 
 /*
- * 首页：严格按 F:/wct/rea-daai 逆向结果（chunk_39）复刻 susu.da-ai.cc，
- * 只换我们自己的 UI 风格。布局 / 功能 / 跳转与原站一致：
- *  居中 Hero → Composer（素材+输入+模式+发送）→ 常用工具 7 个 →
- *  “你想做什么？”场景条 → 发现流（过滤+卡片墙）。
- * 唯一加戏：场景条里追加 2 个石材模块（石材效果图 / 厂家介绍视频）。
+ * 首页 1:1 复刻 susu.da-ai.cc（2026-10-30 实测逐字复刻）
  *
- * 原站精确配置（勿改跳转）：
- *  TOOLS 默认顺序 a.mi，共 7 个；标题 b3；href 见 c（video-editor 为站内剪辑台动作）。
- *  SCENES e4，共 6 个；电商/到店/广告/短剧走 wW() 即
- *  /toolbox/video-generation?skill=xxx&skill_panel=open&skill_category=yyy。
- *  Composer 模式 eF：agent / video / image。
+ * 原站 DOM 层级（1600×900 实测）：
+ *  div.workspace-shell
+ *   └─ main.workspace-main-content
+ *      └─ div.page-home
+ *         └─ div.home-scroll-content   px-[60px] pt-[96px] items-center
+ *            └─ div.home-above-fold    gap-[64px]
+ *               ├─ div.home-landing-blue-wash-center   （绝对定位辉光）
+ *               ├─ div.home-header-title > div.home-hero-title > h1.home-hero-title-text
+ *               └─ div.home-composer-tool-group        gap-12 max-w-[840px]
+ *                  ├─ div.home-header-composer-wrap.home-header-composer
+ *                  │    ├─ div.home-composer-input-row
+ *                  │    │    ├─ div.composer-reference-rail-desktop
+ *                  │    │    └─ div.home-composer-editor-wrap > div.home-composer-editor
+ *                  │    │         └─ div.composer-prompt-input > div.mention-composer
+ *                  │    └─ div.composer-toolbar > div.speech-input-toolbar
+ *                  └─ section.home-entry-tool-section   （7 个常用工具）
+ *            ├─ section.home-entry-scene-section        （6 个场景）
+ *            └─ section.home-discover-section
+ *
+ * 唯一加戏：场景条追加 2 个石材模块（石材效果图 / 厂家介绍视频）。
  */
 
+/* —— 原站常用工具（7 个，顺序固定） —— */
 const TOOLS = [
-  { key: "canvas", title: "画布", desc: "自由编排创作流程", href: "/canvas", Icon: LayoutDashboard, tint: "bg-[#eef1ff] text-[#596be8]" },
-  { key: "video-editor", title: "剪辑台", desc: "剪辑视频与音频", href: "/toolbox/editor", Icon: Clapperboard, tint: "bg-[#eef1ff] text-[#596be8]" },
-  { key: "video-quality-enhance", title: "画质增强", desc: "提升清晰度与质感", href: "/toolbox/video-quality-enhance", Icon: Sparkles, tint: "bg-[#fff1e8] text-[#d66d2e]" },
-  { key: "video-watermark-remove", title: "水印擦除", desc: "去除水印与遮挡", href: "/toolbox/video-watermark-remove", Icon: Droplets, tint: "bg-[#eaf3ff] text-[#347fe8]" },
-  { key: "video-subtitle-erase", title: "字幕擦除", desc: "去除字幕与文字", href: "/toolbox/video-subtitle-erase", Icon: Eraser, tint: "bg-[#f1ecff] text-[#7657df]" },
-  { key: "image-retouching", title: "图片精修", desc: "精修细节纹理", href: "/toolbox/image-generation?skill_pack=product-refine", Icon: ImagePlus, tint: "bg-[#e8f8f2] text-[#248866]" },
-  { key: "create-character", title: "AI 角色", desc: "创建专属 AI 角色", href: "/assets#character", Icon: UserRound, tint: "bg-[#eef1ff] text-[#596be8]" },
+  {
+    key: "canvas",
+    title: "画布",
+    href: "/canvas",
+    icon: (
+      <svg
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.25}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden
+        className="workspace-nav-icon pointer-events-none home-entry-tool-icon h-6 w-6 stroke-[1.2]"
+      >
+        <path d="M7 3.5v17M17 3.5v7M3 7h18M3 16h8" />
+        <path d="M17 13c.5 2 1.5 3 3.5 3.5-2 .5-3 1.5-3.5 3.5-.5-2-1.5-3-3.5-3.5 2-.5 3-1.5 3.5-3.5Z" fill="none" />
+      </svg>
+    ),
+  },
+  {
+    key: "editor",
+    title: "剪辑台",
+    href: "/toolbox/editor",
+    icon: (
+      <svg
+        className="video-editor-workbench-icon home-entry-tool-icon h-6 w-6 stroke-[1.2]"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M3 11h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7Z" />
+        <path d="M3 8h18v3H3zM10 8l-3 3M16 8l-3 3M21 8l-3 3" />
+        <g
+          className="video-editor-workbench-clapper-top transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] rotate-0"
+          style={{ transformBox: "view-box", transformOrigin: "3px 8px" }}
+        >
+          <path d="M3 5h18v3H3zM7 5l3 3M13 5l3 3M19 5l2 2" />
+        </g>
+        <path d="M7 16h10" />
+      </svg>
+    ),
+  },
+  {
+    key: "video-quality-enhance",
+    title: "画质增强",
+    href: "/toolbox/video-quality-enhance",
+    icon: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        strokeWidth={1.5}
+        stroke="currentColor"
+        aria-hidden
+        data-slot="icon"
+        className="home-entry-tool-icon h-6 w-6 stroke-[1.2]"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423Z"
+        />
+      </svg>
+    ),
+  },
+  {
+    key: "video-watermark-remove",
+    title: "水印擦除",
+    href: "/toolbox/video-watermark-remove",
+    icon: (
+      <svg
+        aria-hidden
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="canvas-watermark-remove-icon home-entry-tool-icon h-6 w-6 stroke-[1.2]"
+      >
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M12 5v14" />
+        <path d="m4 10 4-4M4 15l8-8M7 18l5-5" />
+      </svg>
+    ),
+  },
+  {
+    key: "video-subtitle-erase",
+    title: "字幕擦除",
+    href: "/toolbox/video-subtitle-erase",
+    icon: (
+      <svg
+        aria-hidden
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="canvas-subtitle-erase-icon home-entry-tool-icon h-6 w-6 stroke-[1.2]"
+      >
+        <rect x="3" y="4" width="18" height="14" rx="2" />
+        <path d="M6.5 14h4M13.5 14h4" />
+        <path d="m14.5 18.5 5-5 2 2-5 5h-2Z" />
+        <path d="m15.5 17.5 2 2" />
+      </svg>
+    ),
+  },
+  {
+    key: "image-refine",
+    title: "图片精修",
+    href: "/toolbox/image-generation?skill_pack=product-refine",
+    icon: (
+      <svg
+        preserveAspectRatio="none"
+        width="100%"
+        height="100%"
+        overflow="visible"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="home-entry-tool-icon h-6 w-6 stroke-[1.2]"
+        aria-hidden
+      >
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M9.28027 7.62402C10.661 7.62402 11.7803 8.74331 11.7803 10.124C11.7803 11.5047 10.661 12.624 9.28027 12.624C7.89967 12.6239 6.78027 11.5047 6.78027 10.124C6.78027 8.74339 7.89967 7.62416 9.28027 7.62402ZM9.28027 9.12402C8.7281 9.12416 8.28027 9.57182 8.28027 10.124C8.28027 10.6762 8.7281 11.1239 9.28027 11.124C9.83256 11.124 10.2803 10.6763 10.2803 10.124C10.2803 9.57174 9.83256 9.12402 9.28027 9.12402Z"
+          fill="var(--fill-0, #111111)"
+        />
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M17.5 4.16797C19.433 4.16797 21 5.73497 21 7.66797V13.6514L21.0264 13.667L21 13.7139V15.668C21 17.601 19.433 19.168 17.5 19.168H6.5C4.567 19.168 3 17.601 3 15.668V7.66797C3 5.73497 4.567 4.16797 6.5 4.16797H17.5ZM6.5 5.66797C5.39543 5.66797 4.5 6.5634 4.5 7.66797V15.668L4.51074 15.8721C4.6062 16.8136 5.35435 17.5618 6.2959 17.6572L6.5 17.668H8.24316L14.0908 12.0381C14.9615 11.1997 16.2775 11.0281 17.334 11.6152L19.5 12.8184V7.66797C19.5 6.5634 18.6046 5.66797 17.5 5.66797H6.5ZM16.6055 12.9258C16.1253 12.659 15.5266 12.7371 15.1309 13.1182L10.4062 17.668H17.5L17.7041 17.6572C18.6457 17.5618 19.3938 16.8136 19.4893 15.8721L19.5 15.668V14.5352L16.6055 12.9258Z"
+          fill="var(--fill-0, #111111)"
+        />
+      </svg>
+    ),
+  },
+  {
+    key: "ai-character",
+    title: "AI 角色",
+    href: "/assets#character",
+    icon: (
+      <svg
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden
+        className="ai-character-icon home-entry-tool-icon h-6 w-6 stroke-[1.2]"
+      >
+        <circle cx="9" cy="8" r="3.5" />
+        <path d="M2.5 20v-1.5a6.5 6.5 0 0 1 13 0V20H2.5Z" />
+        <path d="M18 2.5c.45 2.7 1.3 3.55 4 4-2.7.45-3.55 1.3-4 4-.45-2.7-1.3-3.55-4-4 2.7-.45 3.55-1.3 4-4Z" />
+      </svg>
+    ),
+  },
 ];
 
-const SCENES = [
-  { key: "depth-video-clone", title: "爆款复刻", desc: "参考爆款视频，轻松创作专属爆款", media: "video", href: "/toolbox/depth-video-clone", cover: "/images/bench/scene-entry-depth-video-clone-v2.jpg", stone: false },
-  { key: "ecommerce-image-set", title: "商详套图", desc: "一键生成专业商品详情套图", media: "image", href: "/toolbox/ecommerce-image-set", cover: "/images/bench/scene-entry-ecommerce-image-set.jpg", stone: false },
-  { key: "ecommerce-video", title: "电商带货", desc: "快速生成商品展示与带货视频", media: "video", href: "/toolbox/video-generation?skill=ecommerce-spoken-selling&skill_panel=open&skill_category=ecommerce", cover: "/images/bench/scene-entry-ecommerce-video.jpg", stone: false },
-  { key: "local-store-video", title: "同城到店", desc: "轻松制作本地探店推广视频", media: "video", href: "/toolbox/video-generation?skill=local-store-discovery&skill_panel=open&skill_category=local-store", cover: "/images/bench/scene-entry-local-store-video.jpg", stone: false },
-  { key: "brand-advertising", title: "品牌广告", desc: "打造视听统一的品牌广告", media: "video", href: "/toolbox/video-generation?skill=advertising-brand-proposition&skill_panel=open&skill_category=advertising-tvc", cover: "/images/bench/scene-entry-brand-advertising.jpg", stone: false },
-  { key: "short-drama", title: "剧情短片", desc: "快速创作情节紧凑的剧情短片", media: "video", href: "/toolbox/video-generation?skill=short-drama-dialogue&skill_panel=open&skill_category=short-drama", cover: "/images/bench/scene-entry-short-drama.jpg", stone: false },
-  // —— 石材新增：并入“你想做什么？”，同卡片样式 ——
-  { key: "stone-effect", title: "石材效果图", desc: "传一块板，出整套空间效果图", media: "image", href: "/toolbox/stone-effect", cover: "/images/toapi/result-5.png", stone: true },
-  { key: "factory-video", title: "厂家介绍视频", desc: "探厂探展厅 + 数字人口播", media: "video", href: "/toolbox/factory-video", cover: "/images/toapi/result-6.png", stone: true },
+/* —— 原站场景卡（6 个）+ 石材新增 2 个 —— */
+const VIDEO_MEDIA_ICON = (
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.25}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden
+    className="workspace-nav-icon pointer-events-none home-entry-scene-media-icon h-4 w-4 shrink-0 text-[var(--color-home-entry-text)]"
+  >
+    <path d="m16.5 10 4-3a.5.5 0 0 1 .8.4v9.2a.5.5 0 0 1-.8.4l-4-3" fill="none" />
+    <rect x="2.5" y="5.5" width="14" height="13" rx="2.5" fill="none" />
+    <rect x="6" y="9" width="6" height="3" rx="1.5" stroke="currentColor" />
+  </svg>
+);
+const IMAGE_MEDIA_ICON = (
+  <svg
+    preserveAspectRatio="none"
+    width="100%"
+    height="100%"
+    overflow="visible"
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden
+    className="home-entry-scene-media-icon h-4 w-4 shrink-0 text-[var(--color-home-entry-text)]"
+  >
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M9.28027 7.62402C10.661 7.62402 11.7803 8.74331 11.7803 10.124C11.7803 11.5047 10.661 12.624 9.28027 12.624C7.89967 12.6239 6.78027 11.5047 6.78027 10.124C6.78027 8.74339 7.89967 7.62416 9.28027 7.62402ZM9.28027 9.12402C8.7281 9.12416 8.28027 9.57182 8.28027 10.124C8.28027 10.6762 8.7281 11.1239 9.28027 11.124C9.83256 11.124 10.2803 10.6763 10.2803 10.124C10.2803 9.57174 9.83256 9.12402 9.28027 9.12402Z"
+      fill="var(--fill-0, #111111)"
+    />
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M17.5 4.16797C19.433 4.16797 21 5.73497 21 7.66797V13.6514L21.0264 13.667L21 13.7139V15.668C21 17.601 19.433 19.168 17.5 19.168H6.5C4.567 19.168 3 17.601 3 15.668V7.66797C3 5.73497 4.567 4.16797 6.5 4.16797H17.5ZM6.5 5.66797C5.39543 5.66797 4.5 6.5634 4.5 7.66797V15.668L4.51074 15.8721C4.6062 16.8136 5.35435 17.5618 6.2959 17.6572L6.5 17.668H8.24316L14.0908 12.0381C14.9615 11.1997 16.2775 11.0281 17.334 11.6152L19.5 12.8184V7.66797C19.5 6.5634 18.6046 5.66797 17.5 5.66797H6.5ZM16.6055 12.9258C16.1253 12.659 15.5266 12.7371 15.1309 13.1182L10.4062 17.668H17.5L17.7041 17.6572C18.6457 17.5618 19.3938 16.8136 19.4893 15.8721L19.5 15.668V14.5352L16.6055 12.9258Z"
+      fill="var(--fill-0, #111111)"
+    />
+  </svg>
+);
+const MOBILE_VIDEO_MEDIA_ICON = (
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.25}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden
+    className="workspace-nav-icon pointer-events-none home-entry-mobile-scene-media-icon h-4 w-4 shrink-0 text-foreground"
+  >
+    <path d="m16.5 10 4-3a.5.5 0 0 1 .8.4v9.2a.5.5 0 0 1-.8.4l-4-3" fill="none" />
+    <rect x="2.5" y="5.5" width="14" height="13" rx="2.5" fill="none" />
+    <rect x="6" y="9" width="6" height="3" rx="1.5" stroke="currentColor" />
+  </svg>
+);
+const MOBILE_IMAGE_MEDIA_ICON = (
+  <svg
+    preserveAspectRatio="none"
+    width="100%"
+    height="100%"
+    overflow="visible"
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden
+    className="home-entry-mobile-scene-media-icon h-4 w-4 shrink-0 text-foreground"
+  >
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M9.28027 7.62402C10.661 7.62402 11.7803 8.74331 11.7803 10.124C11.7803 11.5047 10.661 12.624 9.28027 12.624C7.89967 12.6239 6.78027 11.5047 6.78027 10.124C6.78027 8.74339 7.89967 7.62416 9.28027 7.62402ZM9.28027 9.12402C8.7281 9.12416 8.28027 9.57182 8.28027 10.124C8.28027 10.6762 8.7281 11.1239 9.28027 11.124C9.83256 11.124 10.2803 10.6763 10.2803 10.124C10.2803 9.57174 9.83256 9.12402 9.28027 9.12402Z"
+      fill="var(--fill-0, #111111)"
+    />
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M17.5 4.16797C19.433 4.16797 21 5.73497 21 7.66797V13.6514L21.0264 13.667L21 13.7139V15.668C21 17.601 19.433 19.168 17.5 19.168H6.5C4.567 19.168 3 17.601 3 15.668V7.66797C3 5.73497 4.567 4.16797 6.5 4.16797H17.5ZM6.5 5.66797C5.39543 5.66797 4.5 6.5634 4.5 7.66797V15.668L4.51074 15.8721C4.6062 16.8136 5.35435 17.5618 6.2959 17.6572L6.5 17.668H8.24316L14.0908 12.0381C14.9615 11.1997 16.2775 11.0281 17.334 11.6152L19.5 12.8184V7.66797C19.5 6.5634 18.6046 5.66797 17.5 5.66797H6.5ZM16.6055 12.9258C16.1253 12.659 15.5266 12.7371 15.1309 13.1182L10.4062 17.668H17.5L17.7041 17.6572C18.6457 17.5618 19.3938 16.8136 19.4893 15.8721L19.5 15.668V14.5352L16.6055 12.9258Z"
+      fill="var(--fill-0, #111111)"
+    />
+  </svg>
+);
+
+const SCENES: {
+  key: string;
+  title: string;
+  desc: string;
+  media: "video" | "image";
+  href: string;
+  cover: string;
+  video?: string;
+  stone?: boolean;
+}[] = [
+  {
+    key: "depth-video-clone",
+    title: "爆款复刻",
+    desc: "参考爆款视频，轻松创作专属爆款",
+    media: "video" as const,
+    href: "/toolbox/depth-video-clone",
+    cover: "/images/bench/scene-entry-depth-video-clone-v2.jpg",
+    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-depth-video-clone-v2.mp4",
+  },
+  {
+    key: "ecommerce-image-set",
+    title: "商详套图",
+    desc: "一键生成专业商品详情套图",
+    media: "image" as const,
+    href: "/toolbox/ecommerce-image-set",
+    cover: "/images/bench/scene-entry-ecommerce-image-set.jpg",
+    video: undefined,
+  },
+  {
+    key: "ecommerce-video",
+    title: "电商带货",
+    desc: "快速生成商品展示与带货视频",
+    media: "video" as const,
+    href: "/toolbox/video-generation?skill=ecommerce-spoken-selling&skill_panel=open&skill_category=ecommerce",
+    cover: "/images/bench/scene-entry-ecommerce-video.jpg",
+    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-ecommerce-video.mp4",
+  },
+  {
+    key: "local-store-video",
+    title: "同城到店",
+    desc: "轻松制作本地探店推广视频",
+    media: "video" as const,
+    href: "/toolbox/video-generation?skill=local-store-discovery&skill_panel=open&skill_category=local-store",
+    cover: "/images/bench/scene-entry-local-store-video.jpg",
+    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-local-store-video.mp4",
+  },
+  {
+    key: "brand-advertising",
+    title: "品牌广告",
+    desc: "打造视听统一的品牌广告",
+    media: "video" as const,
+    href: "/toolbox/video-generation?skill=advertising-brand-proposition&skill_panel=open&skill_category=advertising-tvc",
+    cover: "/images/bench/scene-entry-brand-advertising.jpg",
+    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-brand-advertising.mp4",
+  },
+  {
+    key: "short-drama",
+    title: "剧情短片",
+    desc: "快速创作情节紧凑的剧情短片",
+    media: "video" as const,
+    href: "/toolbox/video-generation?skill=short-drama-dialogue&skill_panel=open&skill_category=short-drama",
+    cover: "/images/bench/scene-entry-short-drama.jpg",
+    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-short-drama.mp4",
+  },
+  {
+    key: "stone-effect",
+    title: "石材效果图",
+    desc: "传一块板，出整套空间效果图",
+    media: "image" as const,
+    href: "/toolbox/stone-effect",
+    cover: "/images/bench/scene-entry-stone-effect.jpg",
+    video: undefined,
+    stone: true,
+  },
+  {
+    key: "factory-video",
+    title: "厂家介绍视频",
+    desc: "探厂探展厅 + 数字人口播",
+    media: "video" as const,
+    href: "/toolbox/factory-video",
+    cover: "/images/bench/scene-entry-factory-video.jpg",
+    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-factory-video.mp4",
+    stone: true,
+  },
 ];
 
-/* Composer 生成模式（原站 eF）：agent / video / image */
+/* —— Composer 生成模式（原站 home-style-dropdown） —— */
 const MODES = [
-  { value: "agent", label: "Agent 模式" },
-  { value: "video", label: "视频生成" },
-  { value: "image", label: "图片生成" },
-];
+  { value: "agent", label: "Agent 模式", icon: "sparkle" },
+  { value: "video", label: "视频生成", icon: "video" },
+  { value: "image", label: "图片生成", icon: "image" },
+] as const;
 
 const PLACEHOLDERS: Record<string, string> = {
   agent: "结合参考、输入文字或 @ 主体，说说今天想做什么。",
@@ -70,199 +436,602 @@ const PLACEHOLDERS: Record<string, string> = {
   image: "可上传参考图并输入文字，或使用 @ 引用已添加的素材。可自由组合图、文。",
 };
 
-/* 发现流：取自 rea-daai/api/api_v1_discover_home.json（标题/作者/点赞为原站真实数据，封面用本地图避免盗链失效） */
-const DISCOVER = [
-  { title: "剧情带货", desc: "茂隆掌柜", likes: 321, type: "video", cover: "/images/toapi/asset-1.png" },
-  { title: "大码服饰（信息密度）", desc: "茂隆掌柜", likes: 157, type: "video", cover: "/images/toapi/asset-2.png" },
-  { title: "人物三视图", desc: "告别人脸ai感", likes: 139, type: "image", cover: "/images/toapi/asset-3.png" },
-  { title: "红木家具（情绪留人）", desc: "茂隆掌柜", likes: 107, type: "video", cover: "/images/toapi/asset-4.png" },
-  { title: "自建人脸（模特库）", desc: "秒做人脸资产", likes: 107, type: "canvas", cover: "/images/toapi/asset-5.png" },
-  { title: "服饰1:1复刻", desc: "爆款工作流", likes: 60, type: "canvas", cover: "/images/toapi/asset-6.png" },
-  { title: "文生图教程", desc: "提示词模版", likes: 31, type: "image", cover: "/images/toapi/result-2.png" },
-  { title: "2.5｜服装 分镜复刻", desc: "学习分镜复刻，可以解决大部分你遇到的问题", likes: 70, type: "canvas", cover: "/images/toapi/result-1.png" },
-];
-
+/* —— 发现流（1:1 复刻原站瀑布流；封面为本地重新生成的素材） —— */
 const DISCOVER_TABS = ["发现", "视频", "图片", "画布"] as const;
+
+function ModeIcon({ kind }: { kind: (typeof MODES)[number]["icon"] }) {
+  if (kind === "video") {
+    return (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        strokeWidth={1.5}
+        stroke="currentColor"
+        aria-hidden
+        data-slot="icon"
+        className="h-5 w-5"
+      >
+        <path d="m16.5 10 4-3a.5.5 0 0 1 .8.4v9.2a.5.5 0 0 1-.8.4l-4-3" fill="none" />
+        <rect x="2.5" y="5.5" width="14" height="13" rx="2.5" fill="none" />
+        <rect x="6" y="9" width="6" height="3" rx="1.5" stroke="currentColor" />
+      </svg>
+    );
+  }
+  if (kind === "image") {
+    return (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        strokeWidth={1.5}
+        stroke="currentColor"
+        aria-hidden
+        data-slot="icon"
+        className="h-5 w-5"
+      >
+        <rect x="3.5" y="5" width="17" height="14" rx="2.5" fill="none" />
+        <circle cx="9" cy="10" r="1.5" stroke="currentColor" />
+        <path d="m8 19 6.5-6.5a1.5 1.5 0 0 1 1.8-.25l4.2 2.25" stroke="currentColor" />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      aria-hidden
+      data-slot="icon"
+      className="h-5 w-5"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423Z"
+      />
+    </svg>
+  );
+}
 
 export default function HomePage() {
   const router = useRouter();
+  const { push } = useToast();
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const [sceneEnds, setSceneEnds] = useState({ left: false, right: true });
+  const updateSceneEnds = () => {
+    const el = sceneRef.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    setSceneEnds({
+      left: el.scrollLeft > 8,
+      right: el.scrollLeft < max - 8,
+    });
+  };
+  useEffect(() => {
+    updateSceneEnds();
+    const el = sceneRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", updateSceneEnds, { passive: true });
+    window.addEventListener("resize", updateSceneEnds);
+    return () => {
+      el.removeEventListener("scroll", updateSceneEnds);
+      window.removeEventListener("resize", updateSceneEnds);
+    };
+  }, []);
+  const scrollScene = (dir: number) => {
+    const el = sceneRef.current;
+    if (el) {
+      el.scrollBy({ left: dir * Math.max(560, el.clientWidth * 0.8), behavior: "smooth" });
+      // 兜底：smooth 动画结束后刷新箭头显隐
+      window.setTimeout(updateSceneEnds, 450);
+    }
+    else push({ tone: "neutral", title: dir > 0 ? "向右滑动（演示）" : "向左滑动（演示）" });
+  };
   const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState("agent");
-  const [modeOpen, setModeOpen] = useState(false);
+  const [mode] = useState<string>("agent");
   const [tab, setTab] = useState<(typeof DISCOVER_TABS)[number]>("发现");
+  const editorRef = useRef<HTMLDivElement>(null);
 
   const canSubmit = prompt.trim().length > 0;
+
+  // 原站实测：未登录时点击首页工具 / 场景卡片不会跳转，而是弹出登录弹窗（.modal-login-shell）
+  // —— 本地联调放行（无后端）：直接跳转，不弹登录；恢复时删掉下一行、取消注释即可 ——
+  // const user = useAuthStore((s) => s.user);
+  const requireAuth = (href: string) => {
+    // if (!user) {
+    //   setLoginOpen(true);
+    //   return;
+    // }
+    router.push(href);
+  };
 
   const submit = () => {
     if (!canSubmit) return;
     const q = encodeURIComponent(prompt.trim());
-    if (mode === "video") router.push(`/toolbox/video-generation?q=${q}`);
-    else if (mode === "image") router.push(`/toolbox/image-generation?q=${q}`);
-    else router.push("/agent-cloud");
+    if (mode === "video") requireAuth(`/toolbox/video-generation?q=${q}`);
+    else if (mode === "image") requireAuth(`/toolbox/image-generation?q=${q}`);
+    else requireAuth("/agent-cloud");
   };
 
-  const visible = DISCOVER.filter((d) => {
-    if (tab === "发现") return true;
-    if (tab === "视频") return d.type === "video";
-    if (tab === "图片") return d.type === "image";
-    return d.type === "canvas";
-  });
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const onInput = () => setPrompt(el.innerText);
+    el.addEventListener("input", onInput);
+    return () => el.removeEventListener("input", onInput);
+  }, []);
+
+  // 原站实测：/login → / ；/register → /?login=1 ；/admin → /?login=1&next=%2Fadmin
+  // 所以登录/注册是**首页弹窗**，不是独立页面。
+  // —— 本地联调放行（无后端）：?login=1 不再自动弹登录；恢复时取消注释即可 ——
+  const [loginOpen, setLoginOpen] = useState(false);
+  // useEffect(() => {
+  //   const sp = new URLSearchParams(window.location.search);
+  //   if (sp.get("login") === "1") {
+  //     setLoginOpen(true);
+  //     const next = sp.get("next");
+  //     if (next) router.replace(`/?login=1&next=${encodeURIComponent(next)}`);
+  //   }
+  // }, [router]);
+
+  const visible = useMemo(() => {
+    const base = DISCOVER_ITEMS;
+    if (tab === "发现") return base;
+    if (tab === "视频") return base.filter((d) => d.kind === "video");
+    if (tab === "图片") return base.filter((d) => d.kind === "image");
+    return base.filter((d) => d.kind === "canvas");
+  }, [tab]);
 
   return (
-    <div className="min-h-screen bg-bg-subtle text-fg">
-      <div className="flex min-h-screen">
-        {/* 左侧 52px 导航轨（原站 workspace-sidebar） */}
-        <WorkspaceRail />
-        <div className="min-w-0 flex-1">
-      <main className="page-home relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-        <div className="home-scroll-content relative flex min-h-0 w-full min-w-0 flex-1 flex-col items-center px-[60px] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[96px] max-sm:px-6">
-        {/* —— Hero：居中标题（原站 home-hero-title） —— */}
-        <section className="home-above-fold relative flex w-full min-w-0 flex-col items-center gap-8">
-          {/* 蓝色辉光（原站 home-landing-blue-wash-center） */}
-          <div
-            aria-hidden
-            className="home-landing-blue-wash-center pointer-events-none absolute left-1/2 top-0 z-0 h-[210px] w-full max-w-[860px] -translate-x-1/2 -translate-y-1/2 bg-[radial-gradient(ellipse_50%_100%_at_center_8%,#fdfcfc_0%,#9dd2ff_50%,rgba(157,210,255,0)_78%)] blur-[98px]"
-          />
-          <h1 className="home-hero-title-text relative z-[1] mx-auto max-w-full break-words whitespace-normal text-[28px] font-semibold not-italic leading-9 text-fg max-sm:text-[24px] max-sm:leading-8">
-            <span className="home-hero-title-brand text-[#0471fe]">xin.ai</span>
-            <span className="home-hero-title-separator">，</span>
-            <span className="home-hero-title-tagline">懂制造业的AI创作工具</span>
-          </h1>
+    <WorkspaceShell>
+      {/* 原站层级：page-home 的父级是 .home-decoration-workspace，
+          后者还有 .home-decoration-sidebar-shell（宽 0，占位）。 */}
+      <div className="home-decoration-workspace flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div
+          className="page-home relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[var(--color-home-page-bg)] text-foreground"
+          data-site-theme="minimal"
+          data-site-tone="light"
+          data-home-layout="spotlight"
+          style={HOME_THEME_STYLE}
+        >
+        <div
+          className="home-scroll-content [--home-composer-editor-height:82px] [--home-composer-input-min-height:70px] [&>.home-discover-section]:mt-[var(--home-discover-margin,40px)] max-md:[&>.home-discover-section]:mt-8 scroll-content relative flex min-h-0 w-full min-w-0 flex-1 flex-col items-center px-[60px] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pt-[96px] [html[data-home-layout=compact]_&]:pt-[64px] max-sm:px-6"
+          style={{ "--home-discover-margin": "40px" } as React.CSSProperties}
+        >
+          <div className="home-above-fold relative flex w-full min-w-0 flex-col items-center gap-[64px] max-md:gap-8 [html[data-home-layout=compact]_&]:gap-10">
+            {/* —— 辉光 —— 原站层级：.home-spotlight-backdrop > .home-spotlight-halo —— */}
+            <div className="home-spotlight-backdrop pointer-events-none absolute inset-x-[-60px] top-[-96px] z-0 h-[520px] overflow-hidden bg-[image:var(--gradient-home-spotlight-bg)] max-sm:inset-x-[-24px]">
+              <div className="home-spotlight-halo pointer-events-none absolute left-1/2 top-0 z-[1] h-[210px] w-full max-w-[860px] -translate-x-1/2 -translate-y-1/2 bg-[image:var(--gradient-home-glow)] blur-[98px]" />
+            </div>
 
-          {/* —— Composer：素材 + 输入 + 模式 + 发送（原站 home-header-composer） —— */}
-          <div className="home-header-composer relative z-[2] mx-auto mt-6 flex w-full max-w-[840px] flex-col justify-between gap-0 rounded-[20px] border-2 border-line bg-surface p-2 text-left shadow-premium transition-[box-shadow,border-color,background-color,margin] duration-200 ease-out">
-            <div className="home-composer-input-row flex min-h-0 flex-1 items-start">
-              <Link
-                href="/assets"
-                title="添加参考素材"
-                aria-label="添加参考素材"
-                className="composer-reference-upload-button group relative flex h-16 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-surface text-[#222529]"
-              >
-                <span
-                  aria-hidden
-                  className="absolute inset-0 rounded-[inherit] bg-[linear-gradient(136.6deg,#d7ecff_20.9%,#67e6ff_98.9%)] opacity-30 transition-opacity duration-200 group-hover:opacity-40"
-                />
-                <Plus className="relative z-[1] h-[18px] w-[18px] stroke-[2]" aria-hidden />
-              </Link>
-              <div className="home-composer-editor-wrap relative min-w-0 flex-1 px-2 py-1">
-                <input
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") submit();
-                  }}
-                  placeholder={PLACEHOLDERS[mode]}
-                  aria-label="创作需求输入"
-                  className="min-h-[70px] w-full bg-transparent text-sm text-fg outline-none placeholder:text-fg-subtle"
-                />
+            {/* —— 标题 —— */}
+            <div className="home-header-title relative z-[1] w-fit min-w-0 max-w-full">
+              <div className="home-hero-title relative flex w-full min-w-0 flex-col items-center text-center">
+                <h1 className="home-hero-title-text inline-block max-w-full whitespace-normal break-words text-[28px] font-semibold not-italic leading-9 text-[var(--color-home-hero-title)] max-sm:text-[24px] max-sm:leading-8 [html[data-home-layout=compact]_&]:text-[24px] [html[data-home-layout=compact]_&]:leading-8">
+                  <span className="home-hero-title-brand text-[var(--color-home-hero-accent-text)]">
+                    老板娘苏苏AI
+                  </span>
+                  <span className="home-hero-title-separator">，</span>
+                  <span className="home-hero-title-tagline">
+                    <span className="home-hero-custom-title-part ">
+                      懂制造业的AI创作工具
+                    </span>                  </span>
+                </h1>
               </div>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setModeOpen((v) => !v)}
-                  aria-haspopup="listbox"
-                  aria-expanded={modeOpen}
-                  aria-label="生成模式"
-                  className="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full px-2 text-sm text-fg transition-colors hover:bg-surface-2"
-                >
-                  {MODES.find((m) => m.value === mode)?.label}
-                  <ChevronDown className={cn("size-3.5 transition-transform", modeOpen && "rotate-180")} aria-hidden />
-                </button>
-                {modeOpen && (
-                  <div role="listbox" aria-label="创作类型" className="absolute left-0 top-9 z-20 min-w-[156px] rounded-xl border border-line bg-surface p-2 shadow-xl">
-                    {MODES.map((m) => (
-                      <button
-                        key={m.value}
-                        type="button"
-                        role="option"
-                        aria-selected={mode === m.value}
-                        onClick={() => {
-                          setMode(m.value);
-                          setModeOpen(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-center rounded-lg px-2 py-2 text-left text-sm transition-colors",
-                          mode === m.value ? "bg-surface-3 text-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg"
-                        )}
-                      >
-                        {m.label}
-                      </button>
-                    ))}
+
+            {/* —— Composer + 常用工具 —— */}
+            <div className="home-composer-tool-group relative z-[1] flex w-full max-w-[840px] flex-col gap-12">
+              <div className="home-header-composer-wrap relative z-[2] box-border flex w-full min-w-0 shrink-0 flex-col border border-line bg-[var(--color-home-composer-bg)] p-3 [box-shadow:var(--shadow-home-composer)] [&_.composer-add-button:hover]:bg-action [&_.speech-input-controls-microphone:hover]:bg-action rounded-[20px]">
+                {/* 输入区 */}
+                <div className="home-composer-content flex min-h-0 min-w-0 flex-auto flex-col">
+                  <div
+                    data-home-editor-root="true"
+                    className="home-composer-editor relative z-[1] min-h-0 min-w-0 flex-1 overflow-clip"
+                  >
+                    <div className="home-composer-input-viewport h-full">
+                      <div className="composer-prompt-input relative flex min-h-0 flex-auto flex-col home-composer-input-field min-h-0 w-full flex-1">
+                        <div className="mention-composer relative flex flex-auto flex-col min-h-7 min-w-0">
+                          <div className="mention-composer-shell relative flex min-h-0 flex-auto flex-col min-h-[64px] max-h-[234px] rounded-none border-0 bg-transparent shadow-none cursor-text">
+                            <div
+                              data-mention-placeholder="true"
+                              className="mention-composer-placeholder pointer-events-none absolute z-[1] text-[14px] font-normal leading-[26px] text-[#00000040]"
+                              style={{ left: "0.5rem", right: "0.5rem", top: "0.5rem" }}
+                            >
+                              {PLACEHOLDERS[mode]}
+                            </div>
+                            <div
+                              ref={editorRef}
+                              data-mention-editor="true"
+                              contentEditable
+                              suppressContentEditableWarning
+                              role="textbox"
+                              aria-multiline="true"
+                              className="mention-composer-editor min-h-0 h-full w-full flex-auto cursor-text overflow-y-auto whitespace-pre-wrap break-words px-2 py-2 text-[14px] font-normal leading-[26px] text-[#1f2937]"
+                            />
+                          </div>
+                          <div className="mention-composer-speech min-w-0 shrink-0 contents" />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
+
+                  {/* 工具条 */}
+                  <div className="home-composer-toolbar-wrap w-full shrink-0 mt-2">
+                    <div
+                      style={
+                        {
+                          "--toolbar-size": "32px",
+                          "--toolbar-font-size": "12px",
+                          "--toolbar-icon-size": "18px",
+                        } as React.CSSProperties
+                      }
+                      className="composer-toolbar w-full min-w-0 shrink-0"
+                    >
+                      <div className="speech-input-toolbar flex min-h-[var(--toolbar-size,32px)] w-full min-w-0 shrink-0 flex-nowrap items-end gap-2 max-sm:min-h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:min-h-[var(--toolbar-size,44px)]">
+                        <div className="speech-input-toolbar-main relative min-h-[var(--toolbar-size,32px)] min-w-0 flex-1 max-sm:min-h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:min-h-[var(--toolbar-size,44px)]">
+                          <div className="speech-input-toolbar-details flex min-h-[var(--toolbar-size,32px)] min-w-0 flex-wrap items-center gap-1.5 pr-10 max-sm:min-h-[var(--toolbar-size,44px)] max-sm:pr-14 [@media(pointer:coarse)]:min-h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:pr-14 transition-[opacity,transform,visibility] duration-200 ease-out motion-reduce:transition-none visible translate-y-0 opacity-100 delay-0">
+                            <button
+                              type="button"
+                              aria-label="添加素材"
+                              onClick={() => requireAuth("/assets")}
+                              className="composer-add-button flex h-[var(--toolbar-size,32px)] w-[var(--toolbar-size,32px)] shrink-0 items-center justify-center rounded-full bg-transparent text-foreground transition-colors hover:bg-muted"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                strokeWidth={1.5}
+                                stroke="currentColor"
+                                aria-hidden
+                                data-slot="icon"
+                                className="h-4 w-4"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M12 4.5v15m7.5-7.5h-15"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+
+                      <div className="speech-input-toolbar-slot pointer-events-none absolute inset-x-0 bottom-0 flex h-[var(--toolbar-size,32px)] min-w-0 items-center max-sm:h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:h-[var(--toolbar-size,44px)]">
+                        <div
+                          className="speech-input-controls flex min-h-[var(--toolbar-size,32px)] w-full min-w-0 shrink-0 items-center justify-end gap-2 text-foreground max-sm:min-h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:min-h-[var(--toolbar-size,44px)] pointer-events-none"
+                          data-speech-active="false"
+                          role="group"
+                          aria-label="语音输入控制"
+                        >
+                          <span className="ui-hover-tooltip-trigger inline-flex items-center justify-center outline-none ">
+                            <button
+                              type="button"
+                              aria-label="语音输入"
+                              onClick={() => push({ tone: "neutral", title: "正在聆听…（演示）", description: "前端复刻演示，无需后端即可交互。" })}
+                              className="speech-input-controls-microphone flex h-[var(--toolbar-size,32px)] w-[var(--toolbar-size,32px)] shrink-0 touch-manipulation items-center justify-center rounded-full max-sm:h-[var(--toolbar-size,44px)] max-sm:w-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:w-[var(--toolbar-size,44px)] pointer-events-auto text-muted hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                strokeWidth={1.5}
+                                stroke="currentColor"
+                                aria-hidden
+                                data-slot="icon"
+                                className="h-[var(--toolbar-icon-size,20px)] w-[var(--toolbar-icon-size,20px)]"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z"
+                                />
+                              </svg>
+                            </button>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="speech-input-toolbar-trailing flex h-[var(--toolbar-size,32px)] shrink-0 items-center justify-center max-sm:h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:h-[var(--toolbar-size,44px)]">
+                      <button
+                        type="button"
+                        aria-label="发送"
+                        data-home-composer-send="true"
+                        onClick={submit}
+                        disabled={!canSubmit}
+                        className="composer-toolbar-send flex h-[var(--toolbar-size)] w-[var(--toolbar-size)] shrink-0 items-center justify-center rounded-full bg-foreground text-background disabled:cursor-not-allowed disabled:opacity-35"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={1.5}
+                          stroke="currentColor"
+                          aria-hidden
+                          data-slot="icon"
+                          className="composer-toolbar-send-icon h-[var(--toolbar-icon-size)] w-[var(--toolbar-icon-size)]"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={submit}
-                disabled={!canSubmit}
-                aria-label="发送"
-                className="flex size-8 items-center justify-center rounded-full bg-fg text-bg transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ArrowUp className="size-4" aria-hidden />
-              </button>
             </div>
           </div>
 
-          {/* —— 常用工具：7 个横排（原站 home-entry-tool-list，≥7 项 justify-between） —— */}
-          <section aria-label="常用工具入口" className="mt-12">
-            <div className="flex w-full items-start justify-between gap-2 overflow-x-auto px-4 pb-1 max-sm:justify-start max-sm:gap-5">
-              {TOOLS.map((t) => (
-                <Link
-                  key={t.key}
-                  href={t.href}
-                  title={t.desc}
-                  className="group flex w-[88px] shrink-0 flex-col items-center gap-4 rounded-[16px] text-center"
+              {/* 常用工具 */}
+              <section
+                className="home-entry-tool-section relative w-full max-md:hidden"
+                aria-label="常用工具入口"
+              >
+                <div className="home-entry-tool-viewport w-full">
+                  <div className="home-entry-tool-list flex w-full items-start px-4 justify-between">
+                    {TOOLS.map((t) => (
+                      <Link
+                        key={t.key}
+                        href={t.href}
+                        className="home-entry-tool-card group flex w-[88px] shrink-0 flex-col items-center gap-4 rounded-[16px] text-center disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        <span className="home-entry-tool-icon-box inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-3xl border border-[color:var(--color-home-tool-icon-border)] bg-[var(--color-home-tool-icon-bg)] text-[color:var(--color-home-tool-icon-fg)] [box-shadow:var(--shadow-home-tool-icon)] transition-colors group-hover:bg-[var(--color-home-tool-icon-hover-bg)]">
+                          {t.icon}
+                        </span>
+                        <span className="home-entry-tool-name block w-full truncate text-sm font-base leading-5 text-[color:var(--color-home-tool-name)]">
+                          {t.title}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {/* —— 你想做什么？ —— */}
+            <section
+            className="home-entry-scene-section relative z-[1] w-full min-w-0 max-w-[1744px] max-3xl:max-w-none max-md:hidden"
+            aria-label="创作场景入口"
+          >
+            <header className="home-entry-scene-header mb-4 flex items-center justify-between gap-4">
+              <div className="home-entry-scene-heading flex min-w-0 items-baseline gap-2">
+                <h2 className="home-entry-scene-title text-xl font-semibold text-foreground">
+                  你想做什么？
+                </h2>
+                <p className="home-entry-scene-desc text-xs text-[var(--color-home-entry-description)]">
+                  选择创作目标快速开始
+                </p>
+              </div>
+            </header>
+            <div className="home-entry-scene-viewport-shell group/scene relative w-full min-w-0">
+              <div ref={sceneRef}
+              className="home-entry-scene-perspective w-full overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-[18px] pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                <div className="home-entry-scene-list flex w-full gap-6">
+                  {SCENES.map((s) => (
+                    <Link
+                      key={s.key}
+                      href={s.href}
+                      className="home-entry-scene-card group flex w-[calc(22.222222%_-_21.333333px)] min-w-[240px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[var(--color-home-scene-card-border)] bg-[var(--color-home-scene-card-bg)] text-left [box-shadow:var(--shadow-home-scene-card)]"
+                    >
+                      <span className="home-entry-scene-image-box relative block aspect-video w-full overflow-hidden bg-[var(--color-home-scene-media-bg)]">
+                        <span className="home-creative-entry-scene-cover relative block h-full w-full overflow-hidden transition-transform duration-500 ease-out group-hover:scale-[1.02]">
+                          {s.media === "video" ? (
+                            <div className="interactive-video-cover relative h-full w-full overflow-hidden">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={s.cover}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                className="interactive-video-cover-poster absolute inset-0 h-full w-full object-cover"
+                              />
+                              <video
+                                src={s.video}
+                                loop
+                                playsInline
+                                preload="auto"
+                                aria-hidden
+                                className="interactive-video-cover-player pointer-events-none absolute inset-0 h-full w-full object-cover invisible"
+                              />
+                            </div>
+                          ) : (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={s.cover}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className="home-creative-entry-scene-cover-image h-full w-full object-cover"
+                            />
+                          )}
+                        </span>
+                        {s.media === "video" ? (
+                          <span
+                            className="home-entry-scene-play-badge pointer-events-none absolute right-2 top-2 z-10 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/30 text-white/60 transition-opacity duration-150 group-hover:opacity-0"
+                            aria-hidden="true"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="currentColor"
+                              aria-hidden
+                              data-slot="icon"
+                              className="home-entry-scene-play-badge-icon h-3 w-3 translate-x-px"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="home-entry-scene-content relative flex h-10 w-full items-center gap-2 px-4">
+                        {s.media === "video" ? VIDEO_MEDIA_ICON : IMAGE_MEDIA_ICON}
+                        <span className="home-entry-scene-text flex w-full min-w-0 items-center gap-4">
+                          <span className="home-entry-scene-title shrink-0 text-md font-[12px] font-medium text-[var(--color-home-entry-text)]">
+                            {s.title}
+                          </span>
+                          <span className="home-entry-scene-description min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[11px] text-muted">
+                            {s.desc}
+                          </span>
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className="home-entry-scene-action-mask pointer-events-none absolute inset-y-0 right-8 z-10 w-5 bg-[linear-gradient(to_right,transparent_0px,var(--color-home-scene-card-bg)_100%)] opacity-0 transition-opacity duration-200 ease-out group-hover:opacity-100"
+                        />
+                        <span className="home-entry-scene-action absolute inset-y-0 right-4 z-20 my-auto inline-flex h-8 w-5 translate-x-2 items-center justify-center pl-1 bg-[var(--color-home-scene-card-bg)] text-foreground opacity-0 transition-[transform,opacity] duration-200 ease-out group-hover:translate-x-0 group-hover:opacity-100">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={1.5}
+                            stroke="currentColor"
+                            aria-hidden
+                            data-slot="icon"
+                            className="home-entry-scene-action-icon h-4 w-4 stroke-[1.8]"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+                            />
+                          </svg>
+                        </span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+              {/* —— 左右滚动手柄：按可滚方向常显，滚到头自动隐藏 —— */}
+              <div className={`home-entry-scene-handle-left absolute inset-y-0 left-0 z-10 w-[60px] ${sceneEnds.left ? "" : "pointer-events-none"}`}>
+                <span className={`home-entry-scene-mask-left absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-background to-transparent transition-opacity duration-200 ${sceneEnds.left ? "opacity-100" : "opacity-0"}`} />
+                <button
+                  type="button"
+                  aria-label="向左滑动场景"
+                  aria-hidden={!sceneEnds.left}
+                  tabIndex={sceneEnds.left ? 0 : -1}
+                  onClick={() => scrollScene(-1)}
+                  className={`home-entry-scene-handle-left-action group/scene-handle absolute inset-0 z-[1] flex items-center justify-center transition-[visibility,opacity] duration-200 ${sceneEnds.left ? "visible opacity-100" : "invisible pointer-events-none opacity-0"}`}
                 >
-                  <span className={cn("inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-3xl border border-line/60 shadow-sm transition-colors group-hover:brightness-95", t.tint)}>
-                    <t.Icon className="size-6" strokeWidth={1.2} aria-hidden />
+                  <span className="home-entry-scene-handle-left-visual inline-flex h-8 w-8 items-center justify-center rounded-full bg-surface/70 text-[#444] shadow-sm backdrop-blur-sm transition-[color,background-color] duration-200 group-hover/scene-handle:bg-surface/90 group-hover/scene-handle:text-foreground">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      aria-hidden
+                      data-slot="icon"
+                      className="home-entry-scene-handle-left-icon h-4 w-4 stroke-[1.8]"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M13.5 4.5 6 12l7.5 7.5M6 12h15"
+                      />
+                    </svg>
                   </span>
-                  <span className="block w-full truncate text-sm leading-5 text-fg">{t.title}</span>
-                </Link>
-              ))}
+                </button>
+              </div>
+              <div className={`home-entry-scene-handle-right absolute inset-y-0 right-0 z-10 w-[60px] ${sceneEnds.right ? "" : "pointer-events-none"}`}>
+                <span className={`home-entry-scene-mask-right absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent transition-opacity duration-200 ${sceneEnds.right ? "opacity-100" : "opacity-0"}`} />
+                <button
+                  type="button"
+                  aria-label="向右滑动场景"
+                  aria-hidden={!sceneEnds.right}
+                  tabIndex={sceneEnds.right ? 0 : -1}
+                  onClick={() => scrollScene(1)}
+                  className={`home-entry-scene-handle-right-action group/scene-handle absolute inset-0 z-[1] flex items-center justify-center transition-[visibility,opacity] duration-200 ${sceneEnds.right ? "visible opacity-100" : "invisible pointer-events-none opacity-0"} group-hover/scene:visible group-hover/scene:opacity-100`}
+                >
+                  <span className="home-entry-scene-handle-right-visual inline-flex h-8 w-8 items-center justify-center rounded-full bg-surface/70 text-[#444] shadow-sm backdrop-blur-sm transition-[color,background-color] duration-200 group-hover/scene-handle:bg-surface/90 group-hover/scene-handle:text-foreground">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      aria-hidden
+                      data-slot="icon"
+                      className="home-entry-scene-handle-right-icon h-4 w-4 stroke-[1.8]"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M10.5 4.5 18 12l-7.5 7.5M18 12H3"
+                      />
+                    </svg>
+                  </span>
+                </button>
+              </div>
             </div>
           </section>
-        </section>
 
-        {/* —— 你想做什么：原站 6 场景 + 石材 2 模块，同横滑条 —— */}
-        <section
-          aria-label="创作场景入口"
-          className="home-entry-scene-section relative z-[1] mt-10 w-full min-w-0 max-w-[1744px] max-3xl:max-w-none max-md:hidden"
-        >
-          <header className="home-entry-scene-header mb-4 flex items-center justify-between gap-4">
-            <div className="home-entry-scene-heading flex min-w-0 items-baseline gap-2">
-              <h2 className="home-entry-scene-title text-xl font-semibold text-fg">你想做什么？</h2>
-              <p className="home-entry-scene-desc text-xs text-fg-muted">选择创作目标快速开始</p>
-            </div>
-          </header>
-          <div className="home-entry-scene-viewport-shell group/scene relative w-full min-w-0">
-            <div className="home-entry-scene-perspective w-full overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-[18px] pb-2 scrollbar-none">
-              <div className="home-entry-scene-list flex w-full gap-6">
+          {/* —— 移动端入口（max-md 显示） —— */}
+          <div className="home-entry-mobile max-md:gap-8 hidden w-full min-w-0 flex-col gap-10 max-md:flex">
+            <section className="home-entry-mobile-scene-section min-w-0" aria-label="创作场景入口">
+              <header className="home-entry-mobile-scene-header mb-3">
+                <h2 className="home-entry-mobile-scene-title text-lg font-semibold text-foreground max-sm:text-sm">
+                  你想做什么？
+                </h2>
+              </header>
+              <div className="home-entry-mobile-scene-list flex w-full gap-3 overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {SCENES.map((s) => (
                   <Link
                     key={s.key}
                     href={s.href}
-                    className="home-entry-scene-card group flex w-[calc(22.222222%_-_21.333333px)] min-w-[240px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-line bg-bg text-left"
+                    className="home-entry-mobile-scene-card group flex w-[82%] min-w-[240px] max-w-[320px] shrink-0 flex-col overflow-hidden rounded-[18px] border border-[var(--color-home-scene-card-border)] bg-[var(--color-home-mobile-scene-card-bg)] text-left [box-shadow:var(--shadow-home-scene-card)]"
                   >
-                    <span className="home-entry-scene-image-box relative block aspect-video w-full overflow-hidden bg-surface-2">
+                    <span className="home-entry-mobile-scene-image-box relative block aspect-[5/2] w-full overflow-hidden bg-[var(--color-home-mobile-scene-media-bg)]">
                       <span className="home-creative-entry-scene-cover relative block h-full w-full overflow-hidden transition-transform duration-500 ease-out group-hover:scale-[1.02]">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={s.cover}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          className="absolute inset-0 h-full w-full object-cover"
-                        />
+                        {s.media === "video" ? (
+                          <div className="interactive-video-cover relative h-full w-full overflow-hidden">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={s.cover}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className="interactive-video-cover-poster absolute inset-0 h-full w-full object-cover"
+                            />
+                            <video
+                              src={s.video}
+                              loop
+                              playsInline
+                              preload="auto"
+                              aria-hidden
+                              className="interactive-video-cover-player pointer-events-none absolute inset-0 h-full w-full object-cover invisible"
+                            />
+                          </div>
+                        ) : (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={s.cover}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            className="home-creative-entry-scene-cover-image h-full w-full object-cover"
+                          />
+                        )}
                       </span>
-                      {s.media === "video" && (
-                        <span className="home-entry-scene-play-badge pointer-events-none absolute right-2 top-2 z-10 inline-flex size-5 items-center justify-center rounded-full bg-black/30 text-white/60 transition-opacity duration-150 group-hover:opacity-0" aria-hidden>
+                      {s.media === "video" ? (
+                        <span
+                          className="home-entry-scene-play-badge pointer-events-none absolute right-2 top-2 z-10 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/30 text-white/60 transition-opacity duration-150 group-hover:opacity-0"
+                          aria-hidden="true"
+                        >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
                             viewBox="0 0 24 24"
                             fill="currentColor"
                             aria-hidden
+                            data-slot="icon"
                             className="home-entry-scene-play-badge-icon h-3 w-3 translate-x-px"
                           >
                             <path
@@ -272,98 +1041,149 @@ export default function HomePage() {
                             />
                           </svg>
                         </span>
-                      )}
+                      ) : null}
                     </span>
-                    <span className="relative flex h-10 w-full items-center gap-2 px-4">
-                      {s.media === "video" ? (
-                        <Clapperboard className="size-4 shrink-0 text-fg-muted" aria-hidden />
-                      ) : (
-                        <ImageIcon className="size-4 shrink-0 text-fg-muted" aria-hidden />
-                      )}
-                      <span className="flex w-full min-w-0 items-center gap-4">
-                        <span className="shrink-0 text-[12px] font-medium text-fg">{s.title}</span>
-                        <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[11px] text-fg-muted">
-                          {s.desc}
+                    <span className="home-entry-mobile-scene-content flex h-14 w-full items-center justify-between gap-3 px-4 text-foreground">
+                      <span className="home-entry-mobile-scene-summary flex min-w-0 flex-1 items-center gap-2">
+                        {s.media === "video" ? MOBILE_VIDEO_MEDIA_ICON : MOBILE_IMAGE_MEDIA_ICON}
+                        <span className="home-entry-mobile-scene-text flex min-w-0 items-baseline gap-1.5">
+                          <span className="home-entry-mobile-scene-name shrink-0 text-base font-semibold leading-5">
+                            {s.title}
+                          </span>
+                          <span className="home-entry-mobile-scene-description min-w-0 truncate text-[11px] leading-4 text-muted">
+                            {s.desc}
+                          </span>
                         </span>
+                      </span>
+                      <span className="home-entry-mobile-scene-action inline-flex h-8 w-8 shrink-0 translate-y-2 items-center justify-center text-foreground opacity-0 transition-[transform,opacity] duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={1.5}
+                          stroke="currentColor"
+                          aria-hidden
+                          data-slot="icon"
+                          className="home-entry-mobile-scene-action-icon h-4 w-4 stroke-[1.8]"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+                          />
+                        </svg>
                       </span>
                     </span>
                   </Link>
                 ))}
               </div>
+            </section>
+
+            <section className="home-entry-mobile-tool-section min-w-0" aria-label="常用工具入口">
+              <header className="home-entry-mobile-tool-header mb-3">
+                <h2 className="home-entry-mobile-tool-title text-lg font-semibold text-foreground max-sm:text-sm">
+                  常用工具
+                </h2>
+              </header>
+              <div className="home-entry-mobile-tool-viewport w-full overflow-x-auto overflow-y-visible overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                <div className="home-entry-mobile-tool-list flex w-max gap-3">
+                  {TOOLS.map((t) => (
+                    <Link
+                      key={t.key}
+                      href={t.href}
+                      className="home-entry-tool-card group flex w-[88px] shrink-0 flex-col items-center gap-4 rounded-[16px] text-center disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      <span className="home-entry-tool-icon-box inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-3xl border border-[color:var(--color-home-tool-icon-border)] bg-[var(--color-home-tool-icon-bg)] text-[color:var(--color-home-tool-icon-fg)] [box-shadow:var(--shadow-home-tool-icon)] transition-colors group-hover:bg-[var(--color-home-tool-icon-hover-bg)]">
+                        {t.icon}
+                      </span>
+                      <span className="home-entry-tool-name block w-full truncate text-sm font-base leading-5 text-[color:var(--color-home-tool-name)]">
+                        {t.title}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </div>
+          </div>
+
+          {/* —— 发现 —— */}
+          <section
+            className="home-discover-section w-full max-w-[1744px] max-3xl:max-w-none"
+            aria-label="发现"
+          >
+            <div className="home-discover-content w-full">
+              <header className="home-discover-header sticky top-0 z-50 -mx-[60px] bg-background pb-3 pl-[60px] pt-5 pr-[max(60px,calc(var(--home-actions-width,0px)+36px))] max-sm:-mx-6 max-sm:pl-6 max-sm:pr-[max(24px,calc(var(--home-actions-width,0px)+28px))]">
+                <span className="home-discover-scroll-corner-left pointer-events-none absolute left-[60px] top-full size-4 max-sm:left-6 bg-[radial-gradient(circle_at_bottom_right,transparent_16px,var(--color-bg)_16px)]" />
+                <span className="home-discover-scroll-corner-right pointer-events-none absolute right-[60px] top-full size-4 max-sm:right-6 bg-[radial-gradient(circle_at_bottom_left,transparent_16px,var(--color-bg)_16px)]" />
+                <div
+                  role="tablist"
+                  aria-label="发现内容类型"
+                  className="home-discover-filters flex h-9 min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+                >
+                  {DISCOVER_TABS.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab === t}
+                      onClick={() => setTab(t)}
+                      className={cn(
+                        "home-discover-filter-tab inline-flex shrink-0 items-center rounded-full px-3.5 py-1.5 text-[14px] font-medium leading-none transition-colors",
+                        tab === t
+                          ? "bg-[#EBEBEB] text-[#1a1a1a]"
+                          : "bg-transparent text-[#999999] hover:text-[#666666]"
+                      )}
+                    >
+                      <span>{t}</span>
+                    </button>
+                  ))}
+                </div>
+              </header>
+              <DiscoverWaterfall items={visible} />
             </div>
-          </div>
-        </section>
+          </section>
 
-        {/* —— 发现：过滤 tabs + 卡片墙（原站 home-discover-section） —— */}
-        <section aria-label="发现" className="home-discover-section mt-10 w-full max-w-[1744px] max-3xl:max-w-none">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold tracking-tight">发现</h2>
-            <Link href="/discover" className="text-[13px] text-fg-muted hover:text-fg">
-              更多 →
-            </Link>
-          </div>
-          <div className="mt-3 flex gap-2">
-            {DISCOVER_TABS.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                aria-pressed={tab === t}
-                className={cn(
-                  "inline-flex shrink-0 items-center rounded-full px-3.5 py-1.5 text-sm font-medium leading-none transition-colors",
-                  tab === t ? "bg-surface-3 text-fg" : "bg-transparent text-fg-subtle hover:text-fg-muted"
-                )}
+          {/* —— 页脚 —— */}
+          <p className="site-legal-footer-bar m-0 flex flex-wrap items-center justify-center gap-y-0.5 text-[12px] leading-relaxed text-[#999999] transition-colors home-copyright mt-10 max-md:mt-8 shrink-0">
+            <span className="site-legal-footer-copyright">
+              Copyright <span aria-hidden="true">©</span> 蓝色矩阵
+            </span>
+            <span aria-hidden="true" className="select-none px-1.5 text-[#cccccc]">
+              |
+            </span>
+            <span className="site-legal-footer-icp">
+              网站备案号：
+              <a
+                href="https://beian.miit.gov.cn/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12px] leading-relaxed text-[#999999] transition-colors hover:text-[#666666]"
               >
-                {t}
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 pb-4 lg:grid-cols-4">
-            {visible.map((d) => (
-              <Link
-                key={d.title}
-                href="/discover"
-                aria-label={d.desc ? `${d.title} | ${d.desc}` : d.title}
-                className="group relative overflow-hidden rounded-2xl border border-line bg-surface-2"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={d.cover}
-                  alt=""
-                  aria-hidden
-                  loading="lazy"
-                  className="aspect-[3/4] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                />
-                <span className="absolute inset-x-0 bottom-0 flex min-w-0 items-center gap-1.5 bg-gradient-to-t from-black/70 to-transparent p-2.5 pt-8 text-left text-[11px] leading-none text-white">
-                  <span className="min-w-0 flex-1 truncate">
-                    {d.title} | {d.desc}
-                  </span>
-                  <span className="inline-flex shrink-0 items-center gap-0.5 font-medium tabular-nums">
-                    <Heart className="size-3" aria-hidden />
-                    {d.likes}
-                  </span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
+                浙ICP备2024085888号-4
+              </a>
+            </span>
+            <span aria-hidden="true" className="select-none px-1.5 text-[#cccccc]">
+              |
+            </span>
+            <button
+              type="button"
+              onClick={() => push({ tone: "neutral", title: "联系我们（演示）", description: "商务合作请发送邮件至 hello@example.com" })}
+              className="site-legal-footer-contact text-[12px] leading-relaxed text-[#999999] transition-colors hover:text-[#666666] cursor-pointer border-0 bg-transparent p-0"
+            >
+              联系我们
+            </button>
+          </p>
         </div>
-      </main>
-
-      <footer className="border-t border-line">
-        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-3 px-4 py-8 sm:flex-row sm:items-center sm:px-6">
-          <span className="text-sm font-semibold">xin.ai</span>
-          <nav className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-fg-muted">
-            <Link href="/toolbox" className="hover:text-fg">工具箱</Link>
-            <Link href="/pricing" className="hover:text-fg">定价</Link>
-            <Link href="/docs" className="hover:text-fg">使用指南</Link>
-            <Link href="/account" className="hover:text-fg">账户</Link>
-          </nav>
-          <p className="text-xs text-fg-subtle sm:ml-auto">© 2026 xin.ai</p>
+        {/* 原站：.home-account-actions 是 .page-home 的直接子元素（不在 .home-scroll-content 内） */}
+        <div className="home-account-actions fixed right-[calc(var(--home-decoration-width,0px)+1.5rem)] top-[calc(var(--global-operation-notice-height,0px)+20px)] z-[60] flex flex-row items-center gap-3 transition-[right] duration-[var(--home-decoration-duration,0ms)] motion-reduce:transition-none max-sm:right-[calc(var(--home-decoration-width,0px)+1rem)]" />
         </div>
-      </footer>
-        </div>
+        <div
+          className="home-decoration-sidebar-shell relative shrink-0 transition-[width] duration-[250ms] ease-out motion-reduce:transition-none"
+          style={{ width: 0 }}
+        />
       </div>
-    </div>
+      {loginOpen ? <LoginModal onClose={() => setLoginOpen(false)} /> : null}
+    </WorkspaceShell>
   );
 }

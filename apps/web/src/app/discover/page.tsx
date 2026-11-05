@@ -43,7 +43,7 @@ export default function DiscoverPage() {
         <div className="max-w-2xl">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">发现</h1>
           <p className="mt-3 text-[15px] leading-relaxed text-fg-muted">
-            看看别人用 xin.ai 做了什么。每个作品都标注了能力域与消耗，点击可直接复用同款工作流。
+            看看别人用 new-api 做了什么。每个作品都标注了能力域与消耗，点击可直接复用同款工作流。
           </p>
         </div>
 

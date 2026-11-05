@@ -23,7 +23,7 @@ export function TopNav({ variant = "public" }: { variant?: "public" | "studio" }
           >
             x
           </span>
-          <span className="text-[15px] font-semibold tracking-tight">xin.ai</span>
+          <span className="text-[15px] font-semibold tracking-tight">new-api</span>
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex" aria-label="主导航">

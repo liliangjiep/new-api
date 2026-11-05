@@ -6,7 +6,7 @@ import { useAuthStore } from "@/stores";
 import { setToken } from "@/lib/api";
 
 /**
- * 原站 susu.da-ai.cc 首页登录/注册弹窗（2026-10-31 实测逐字复刻）
+ * 原站 new-api 首页登录/注册弹窗（2026-10-31 实测逐字复刻）
  *
  * 路由行为（实测）：
  *   /login    → 302 到 /
@@ -183,7 +183,7 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
                 id="modal-login-title"
                 className="modal-login-title mb-4 text-xl font-semibold tracking-tight text-foreground"
               >
-                欢迎使用 老板娘苏苏AI
+                欢迎使用 new-api
               </h2>
               <div
                 className="auth-login-tabs mt-0.5 flex gap-0.5 rounded-[0.65rem] bg-[#eceef0] p-1 "

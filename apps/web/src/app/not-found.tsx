@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 /**
- * 原站 susu.da-ai.cc 404 页（实测 1:1，2026-10-31）
+ * 原站 new-api 404 页（实测 1:1，2026-10-31）
  *   <title>未找到</title>
  *   <section class="relative z-[1] mx-auto w-full max-w-shell bg-background px-4 py-4 sm:px-6 sm:py-5 lg:px-10 lg:py-6 flex min-h-[60vh] flex-col items-center justify-center py-24 text-center">
  *     <p class="eyebrow">404</p>

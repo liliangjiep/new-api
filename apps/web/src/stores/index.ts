@@ -13,7 +13,7 @@ export const useThemeStore = create<ThemeState>()(
       theme: DEFAULT_THEME,
       setTheme: (theme) => set({ theme }),
     }),
-    { name: "xin.theme" }
+    { name: "new-api.theme" }
   )
 );
 
@@ -30,7 +30,7 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set({ user }),
       clear: () => set({ user: null }),
     }),
-    { name: "xin.auth" }
+    { name: "new-api.auth" }
   )
 );
 

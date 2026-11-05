@@ -9,7 +9,7 @@ import { WorkspaceShell } from "@/components/features/WorkspaceShell";
 import { useToast } from "@/components/features/ToastHost";
 
 /**
- * 原站 1:1 骨架 —— susu.da-ai.cc
+ * 原站 1:1 骨架 —— new-api
  *
  *  body
  *  └─ div.workspace-shell                       h-[calc(100vh-...)] flex-row bg-bg-subtle
@@ -860,7 +860,7 @@ export function ExampleCarousel({
   variant?: "single" | "carousel";
 }) {
   /**
-   * 原站（susu.da-ai.cc /toolbox/ecommerce-image-set 实测）轮播为「克隆首尾 + 无限循环」：
+   * 原站（new-api /toolbox/ecommerce-image-set 实测）轮播为「克隆首尾 + 无限循环」：
    *   - track 内共有 n+2 个 slide：[克隆最后一张, ...真实图片, 克隆第一张]
    *   - 初始 transform = translate3d(-100%, 0, 0) → 对齐 DOM 第 1 个（真实第 1 张）
    *   - 指示器数量 = 真实图片数（n），不计入克隆

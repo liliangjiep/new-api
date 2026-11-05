@@ -1,5 +1,5 @@
 {
   "openapi": "3.0.0",
-  "info": { "title": "xin.ai API", "version": "1.0.0" },
+  "info": { "title": "new-api API", "version": "1.0.0" },
   "paths": {}
 }

@@ -64,7 +64,7 @@ export function StudioShell({
         aria-label="工作台侧边栏"
       >
         <div className="flex h-14 items-center gap-2.5 border-b border-line px-4">
-          <Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label="xin.ai 首页">
+          <Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label="new-api 首页">
             <span
               className="flex size-7 shrink-0 items-center justify-center rounded-xs bg-accent text-[13px] font-bold text-accent-fg"
               aria-hidden
@@ -72,7 +72,7 @@ export function StudioShell({
               x
             </span>
             {!collapsed && (
-              <span className="truncate text-[15px] font-semibold tracking-tight">xin.ai</span>
+              <span className="truncate text-[15px] font-semibold tracking-tight">new-api</span>
             )}
           </Link>
           {!collapsed && (
@@ -180,7 +180,7 @@ export function StudioShell({
               >
                 x
               </span>
-              <span className="text-[15px] font-semibold tracking-tight">xin.ai</span>
+              <span className="text-[15px] font-semibold tracking-tight">new-api</span>
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}

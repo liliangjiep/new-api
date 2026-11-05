@@ -46,7 +46,7 @@ const HOME_THEME_STYLE = {
 } as React.CSSProperties;
 
 /*
- * 首页 1:1 复刻 susu.da-ai.cc（2026-10-30 实测逐字复刻）
+ * 首页 1:1 复刻 new-api（2026-10-30 实测逐字复刻）
  *
  * 原站 DOM 层级（1600×900 实测）：
  *  div.workspace-shell
@@ -354,7 +354,7 @@ const SCENES: {
     media: "video" as const,
     href: "/toolbox/depth-video-clone",
     cover: "/images/bench/scene-entry-depth-video-clone-v2.jpg",
-    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-depth-video-clone-v2.mp4",
+    video: undefined,
   },
   {
     key: "ecommerce-image-set",
@@ -372,7 +372,7 @@ const SCENES: {
     media: "video" as const,
     href: "/toolbox/video-generation?skill=ecommerce-spoken-selling&skill_panel=open&skill_category=ecommerce",
     cover: "/images/bench/scene-entry-ecommerce-video.jpg",
-    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-ecommerce-video.mp4",
+    video: undefined,
   },
   {
     key: "local-store-video",
@@ -381,7 +381,7 @@ const SCENES: {
     media: "video" as const,
     href: "/toolbox/video-generation?skill=local-store-discovery&skill_panel=open&skill_category=local-store",
     cover: "/images/bench/scene-entry-local-store-video.jpg",
-    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-local-store-video.mp4",
+    video: undefined,
   },
   {
     key: "brand-advertising",
@@ -390,7 +390,7 @@ const SCENES: {
     media: "video" as const,
     href: "/toolbox/video-generation?skill=advertising-brand-proposition&skill_panel=open&skill_category=advertising-tvc",
     cover: "/images/bench/scene-entry-brand-advertising.jpg",
-    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-brand-advertising.mp4",
+    video: undefined,
   },
   {
     key: "short-drama",
@@ -399,7 +399,7 @@ const SCENES: {
     media: "video" as const,
     href: "/toolbox/video-generation?skill=short-drama-dialogue&skill_panel=open&skill_category=short-drama",
     cover: "/images/bench/scene-entry-short-drama.jpg",
-    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-short-drama.mp4",
+    video: undefined,
   },
   {
     key: "stone-effect",
@@ -418,7 +418,7 @@ const SCENES: {
     media: "video" as const,
     href: "/toolbox/factory-video",
     cover: "/images/bench/scene-entry-factory-video.jpg",
-    video: "https://daai-asset.da-ai.vip/users/00000000-0000-0000-0000-000000000001/assets/scene-entry-factory-video.mp4",
+    video: undefined,
     stone: true,
   },
 ];
@@ -612,7 +612,7 @@ export default function HomePage() {
               <div className="home-hero-title relative flex w-full min-w-0 flex-col items-center text-center">
                 <h1 className="home-hero-title-text inline-block max-w-full whitespace-normal break-words text-[28px] font-semibold not-italic leading-9 text-[var(--color-home-hero-title)] max-sm:text-[24px] max-sm:leading-8 [html[data-home-layout=compact]_&]:text-[24px] [html[data-home-layout=compact]_&]:leading-8">
                   <span className="home-hero-title-brand text-[var(--color-home-hero-accent-text)]">
-                    老板娘苏苏AI
+                    new-api
                   </span>
                   <span className="home-hero-title-separator">，</span>
                   <span className="home-hero-title-tagline">
@@ -821,7 +821,7 @@ export default function HomePage() {
                     >
                       <span className="home-entry-scene-image-box relative block aspect-video w-full overflow-hidden bg-[var(--color-home-scene-media-bg)]">
                         <span className="home-creative-entry-scene-cover relative block h-full w-full overflow-hidden transition-transform duration-500 ease-out group-hover:scale-[1.02]">
-                          {s.media === "video" ? (
+                          {s.media === "video" && !!s.video ? (
                             <div className="interactive-video-cover relative h-full w-full overflow-hidden">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
@@ -991,7 +991,7 @@ export default function HomePage() {
                   >
                     <span className="home-entry-mobile-scene-image-box relative block aspect-[5/2] w-full overflow-hidden bg-[var(--color-home-mobile-scene-media-bg)]">
                       <span className="home-creative-entry-scene-cover relative block h-full w-full overflow-hidden transition-transform duration-500 ease-out group-hover:scale-[1.02]">
-                        {s.media === "video" ? (
+                        {s.media === "video" && !!s.video ? (
                           <div className="interactive-video-cover relative h-full w-full overflow-hidden">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img

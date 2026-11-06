@@ -1,9 +1,18 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceShell } from "@/components/features/WorkspaceShell";
 import { useToast } from "@/components/features/ToastHost";
-import { MOCK_ASSETS, formatBytes, type AssetKind } from "@/lib/domain";
+import { formatBytes, type AssetKind } from "@/lib/domain";
+import {
+  listAssets,
+  uploadAsset,
+  deleteAsset,
+  batchDeleteAssets,
+  updateAsset,
+  type AssetRecord,
+} from "@/lib/backend/assets";
+import { ApiError } from "@/lib/api";
 import { Drawer, Modal } from "@/components/ui/overlays";
 import { Input, Button, Select } from "@/components/ui/primitives";
 import { Badge } from "@/components/ui/surfaces";
@@ -27,11 +36,39 @@ export default function AssetsPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [assets, setAssets] = useState(MOCK_ASSETS);
+  // 行内注释1：真数据 —— 资产列表走后端 /assets，上传走 upload-policy + complete。
+  const [assets, setAssets] = useState<AssetRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const groups = useMemo(() => ["全部分组", ...Array.from(new Set(assets.map((a) => a.group)))], [assets]);
+  /**
+   * 行内注释2：从后端拉资产 —— 筛选全部交给后端，前端只做展示层过滤（保留分组下拉的本地语义）。
+   */
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [res] = await Promise.all([
+        listAssets({ page: 1, pageSize: 100 }),
+      ]);
+      setAssets(res.data ?? []);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "加载资产失败";
+      push({ tone: "warning", title: "加载失败", description: msg });
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const groups = useMemo(
+    () => ["全部分组", ...Array.from(new Set(assets.map((a) => a.group).filter(Boolean)))],
+    [assets],
+  );
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -62,31 +99,43 @@ export default function AssetsPage() {
       return n;
     });
 
-  const doUpload = (files: FileList | null) => {
+  /**
+   * 行内注释3：真上传 —— 逐个走后端 upload-policy → 直传 → complete，成功后刷新列表。
+   */
+  const doUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const incoming = Array.from(files).slice(0, 10).map((f, i) => ({
-      id: `ast_local_${Date.now()}_${i}`,
-      name: f.name,
-      kind: (f.type.startsWith("video") ? "video" : f.type.startsWith("audio") ? "audio" : "image") as AssetKind,
-      size: f.size,
-      createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
-      group: "产品素材",
-      tags: ["本地上传"],
-      thumb: "/images/toapi/asset-1.png",
-    }));
-    setAssets((p) => [...incoming, ...p]);
+    const list = Array.from(files).slice(0, 10);
+    let ok = 0;
+    for (const f of list) {
+      try {
+        const created = await uploadAsset(f, "产品素材");
+        setAssets((p) => [created, ...p]);
+        ok += 1;
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : "上传失败";
+        push({ tone: "warning", title: `${f.name} 上传失败`, description: msg });
+      }
+    }
     setUploadOpen(false);
-    push({ tone: "success", title: `已上传 ${incoming.length} 个文件`, description: "前端演示：已加入资产库（mock）" });
+    if (ok > 0) {
+      push({ tone: "success", title: `已上传 ${ok} 个文件` });
+    }
   };
 
-  const delSelected = () => {
+  const delSelected = async () => {
     if (selected.size === 0) {
       push({ tone: "warning", title: "请先勾选素材" });
       return;
     }
-    setAssets((p) => p.filter((a) => !selected.has(a.id)));
-    push({ tone: "success", title: `已删除 ${selected.size} 个素材` });
-    setSelected(new Set());
+    try {
+      const n = await batchDeleteAssets(Array.from(selected));
+      setAssets((p) => p.filter((a) => !selected.has(a.id)));
+      push({ tone: "success", title: `已删除 ${n} 个素材` });
+      setSelected(new Set());
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "删除失败";
+      push({ tone: "warning", title: "删除失败", description: msg });
+    }
   };
 
   const downloadSelected = () => {
@@ -161,7 +210,11 @@ export default function AssetsPage() {
         </div>
 
         {/* 网格 */}
-        {rows.length === 0 ? (
+        {loading ? (
+          <div className="rounded-xl border border-dashed px-3 py-12 text-center text-xs text-muted sm:text-sm">
+            加载中…
+          </div>
+        ) : rows.length === 0 ? (
           <div className="rounded-xl border border-dashed px-3 py-12 text-center text-xs text-muted sm:text-sm">没有匹配的素材 · 换个关键词或分组试试</div>
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -171,7 +224,7 @@ export default function AssetsPage() {
                 <li key={a.id} className={cn("group overflow-hidden rounded-xl border bg-surface transition-colors", checked ? "border-accent" : "border-line hover:border-line-strong")}>
                   <div className="relative aspect-[4/3] bg-surface-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={a.thumb} alt={a.name} className="size-full object-cover" loading="lazy" />
+                    <img src={a.thumb || a.url || "/images/toapi/asset-1.png"} alt={a.name} className="size-full object-cover" loading="lazy" />
                     <button type="button" role="checkbox" aria-checked={checked} aria-label={`选择${a.name}`} onClick={() => toggle(a.id)}
                       className={cn("absolute left-2 top-2 grid size-5 place-items-center rounded-md border text-[10px]", checked ? "border-accent bg-accent text-on-accent" : "border-line bg-background/90 text-transparent hover:text-muted")}>✓</button>
                     <span className="absolute right-2 top-2"><Badge tone="neutral">{a.kind === "video" ? "视频" : a.kind === "image" ? "图片" : "音频"}</Badge></span>
@@ -181,9 +234,9 @@ export default function AssetsPage() {
                   </div>
                   <div className="space-y-1 p-2.5">
                     <p className="truncate text-xs font-medium text-foreground" title={a.name}>{a.name}</p>
-                    <p className="tabular text-[10px] text-subtle">{formatBytes(a.size)} · {a.createdAt}</p>
+                    <p className="tabular text-[10px] text-subtle">{formatBytes(a.size)} · {a.created_at ?? ""}</p>
                     <p className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[10px] text-muted">{a.group} · {a.tags.join("/")}</span>
+                      <span className="truncate text-[10px] text-muted">{a.group ?? ""} · {(a.tags ?? []).join("/")}</span>
                     </p>
                   </div>
                 </li>
@@ -202,7 +255,7 @@ export default function AssetsPage() {
             <span className="text-sm text-foreground">点击选择文件</span>
             <span className="text-[11px] text-subtle">或直接拖拽到页面虚线区</span>
           </button>
-          <p className="text-[11px] leading-relaxed text-subtle">TODO(API): 接入 POST /assets/upload-policy 直传对象存储，完成后调用 POST /assets/complete 回填。</p>
+          <p className="text-[11px] leading-relaxed text-subtle">上传走两段式：先申请直传凭证（POST /assets/upload-policy），再回填（POST /assets/complete）。</p>
         </div>
       </Modal>
 
@@ -224,22 +277,47 @@ export default function AssetsPage() {
         {preview && (
           <div className="space-y-3 text-sm">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview.thumb} alt={preview.name} className="aspect-video w-full rounded-lg border border-line object-cover" />
+            <img src={preview.thumb || preview.url || "/images/toapi/asset-1.png"} alt={preview.name} className="aspect-video w-full rounded-lg border border-line object-cover" />
             <dl className="space-y-2">
-              {[["类型", preview.kind], ["大小", formatBytes(preview.size)], ["分组", preview.group], ["标签", preview.tags.join(" / ")], ["上传", preview.createdAt]].map(([k, v]) => (
+              {[
+                ["类型", preview.kind],
+                ["大小", formatBytes(preview.size)],
+                ["分组", preview.group ?? ""],
+                ["标签", (preview.tags ?? []).join(" / ")],
+                ["上传", preview.created_at ?? ""],
+              ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4"><dt className="text-subtle">{k}</dt><dd className="text-foreground">{v}</dd></div>
               ))}
             </dl>
             <div className="flex gap-2">
-              <Button variant="secondary" size="sm" className="flex-1" onClick={() => push({ tone: "neutral", title: "已移动分组（演示）", description: preview.name })}>移动分组</Button>
-              <Button variant="secondary" size="sm" className="flex-1" onClick={() => { setAssets((p) => p.filter((a) => a.id !== preview.id)); setPreviewId(null); push({ tone: "success", title: "已删除" }); }}><Trash2 className="size-3.5" aria-hidden />删除</Button>
+              <Button variant="secondary" size="sm" className="flex-1" onClick={() => { setRenameValue(preview.name); setRenameOpen(true); }}>重命名</Button>
+              <Button variant="secondary" size="sm" className="flex-1" onClick={async () => {
+                try {
+                  await deleteAsset(preview.id);
+                  setAssets((p) => p.filter((a) => a.id !== preview.id));
+                  setPreviewId(null);
+                  push({ tone: "success", title: "已删除" });
+                } catch (e) {
+                  push({ tone: "warning", title: "删除失败", description: e instanceof ApiError ? e.message : undefined });
+                }
+              }}><Trash2 className="size-3.5" aria-hidden />删除</Button>
             </div>
           </div>
         )}
       </Drawer>
 
       {/* 重命名弹窗 */}
-      <Modal open={renameOpen} onClose={() => setRenameOpen(false)} title="重命名" footer={<><Button variant="secondary" onClick={() => setRenameOpen(false)}>取消</Button><Button disabled={!renameValue.trim()} onClick={() => { if (preview) setAssets((p) => p.map((a) => (a.id === preview.id ? { ...a, name: renameValue.trim() } : a))); setRenameOpen(false); push({ tone: "success", title: "已重命名" }); }}>保存</Button></>}>
+      <Modal open={renameOpen} onClose={() => setRenameOpen(false)} title="重命名" footer={<><Button variant="secondary" onClick={() => setRenameOpen(false)}>取消</Button><Button disabled={!renameValue.trim()} onClick={async () => {
+        if (!preview) return;
+        try {
+          const updated = await updateAsset(preview.id, { name: renameValue.trim() });
+          setAssets((p) => p.map((a) => (a.id === preview.id ? { ...a, ...updated } : a)));
+          setRenameOpen(false);
+          push({ tone: "success", title: "已重命名" });
+        } catch (e) {
+          push({ tone: "warning", title: "重命名失败", description: e instanceof ApiError ? e.message : undefined });
+        }
+      }}>保存</Button></>}>
         <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} aria-label="新文件名" placeholder="输入新文件名" />
       </Modal>
     </WorkspaceShell>

@@ -3,7 +3,7 @@ package com.xin.ai.domain.service;
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
 import com.xin.ai.domain.catalog.Catalog;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -29,13 +29,17 @@ public class BillingService {
     public static final String T_LEDGER = "point_ledger";
     public static final String T_QUOTES = "quotes";
     public static final String T_ORDERS = "recharge_orders";
+    /** 行内注释0：积分批次表 —— 每笔充值积分的到期日（充值时间 + 有效期年限）。 */
+    public static final String T_BATCHES = "billing_points_batches";
 
     private static final int QUOTE_TTL_MINUTES = 15;
     private static final String FINGERPRINT_SECRET = "xin-ai-quote-fingerprint";
+    /** 行内注释0.1：积分有效期年限 —— 按充值时间起算，默认 2 年。 */
+    public static final int POINTS_VALID_YEARS = 2;
 
-    private final MemStore store;
+    private final DataStore store;
 
-    public BillingService(MemStore store) {
+    public BillingService(DataStore store) {
         this.store = store;
     }
 
@@ -150,14 +154,65 @@ public class BillingService {
     }
 
     // 行内注释6：充值 —— 记 recharge 流水并加余额；赠送部分单独记 adjust。
+    // 行内注释6.1：每次充值生成一个「积分批次」，到期时间 = 充值日 + 2 年（积分有效期按充值时间算）。
     public void recharge(String userId, int credits, int bonus, String note, String orderNo) {
         Map<String, Object> account = requireAccount(userId);
         store.update(AuthService.T_USERS, userId, Rows.row(
                 "balance", Rows.num(account, "balance") + credits + bonus));
+        // 行内注释6.2：本金与赠送分别建批次 —— 到期时间相同但来源不同，便于对账。
+        if (credits > 0) {
+            createBatch(userId, "recharge", orderNo, credits);
+        }
+        if (bonus > 0) {
+            createBatch(userId, "bonus", orderNo, bonus);
+        }
         appendLedger(userId, "recharge", credits, note, null, orderNo);
         if (bonus > 0) {
             appendLedger(userId, "adjust", bonus, note + "（赠送）", null, orderNo);
         }
+    }
+
+    /**
+     * 创建积分批次 —— 到期时间 = 充值时间 + 有效期年限（默认 2 年）。
+     * 行内注释6.3：批次表 billing_points_batches 记录每笔充值积分的到期日；
+     *             余额视图的 expires_at 取「最早到期批次」—— 这是用户实际会先失效的那笔。
+     */
+    public void createBatch(String userId, String sourceType, String sourceId, int credits) {
+        if (credits <= 0) {
+            return;
+        }
+        LocalDateTime expireAt = Times.now().plusYears(POINTS_VALID_YEARS);
+        String id = "bat_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        store.put(T_BATCHES, id, Rows.row(
+                "id", id, "user_id", userId,
+                "source_type", sourceType, "source_id", sourceId == null ? "" : sourceId,
+                "credits", credits, "consumed", 0,
+                "expire_at", Times.full(expireAt),
+                "created_at", Times.full(Times.now())));
+    }
+
+    /**
+     * 用户积分批次 —— 按到期日升序（先到期先扣）。
+     */
+    public List<Map<String, Object>> batches(String userId) {
+        return store.listWhere(T_BATCHES, r -> Rows.str(r, "user_id").equals(userId)).stream()
+                .sorted((a, b) -> Rows.str(a, "expire_at").compareTo(Rows.str(b, "expire_at")))
+                .toList();
+    }
+
+    /**
+     * 最早到期时间 —— 已过期批次不计入。
+     * 行内注释6.4：没有有效批次时返回 null，前端显示「永久有效」。
+     */
+    public String earliestExpiry(String userId) {
+        LocalDateTime now = Times.now();
+        for (Map<String, Object> b : batches(userId)) {
+            LocalDateTime expireAt = Times.parse(Rows.str(b, "expire_at"));
+            if (expireAt != null && expireAt.isAfter(now)) {
+                return Rows.str(b, "expire_at");
+            }
+        }
+        return null;
     }
 
     // 行内注释7：管理员调整积分（补发/扣减）。
@@ -168,16 +223,21 @@ public class BillingService {
             throw new BizException(ErrorCode.CREDIT_INSUFFICIENT, Map.of("message", "扣减后余额为负"));
         }
         store.update(AuthService.T_USERS, userId, Rows.row("balance", balance));
+        // 行内注释7.1：补发的积分同样建批次，按调整日起算两年有效期。
+        if (amount > 0) {
+            createBatch(userId, "adjust", "", amount);
+        }
         appendLedger(userId, "adjust", amount, reason, null, null);
     }
 
-    // 行内注释8：余额视图 —— available / frozen / 有效期。
+    // 行内注释8：余额视图 —— available / frozen / 有效期（按充值批次算，最早到期的那笔）。
     public Map<String, Object> balance(String userId) {
         Map<String, Object> account = requireAccount(userId);
+        String earliest = earliestExpiry(userId);
         return Rows.row(
                 "available", Rows.num(account, "balance"),
                 "frozen", Rows.num(account, "frozen"),
-                "expires_at", "2028-10-28");
+                "expires_at", earliest == null ? "永久有效" : earliest);
     }
 
     // 行内注释9：流水查询 —— 只读、倒序、分页；type 支持 recharge/consume/refund/bonus/all。

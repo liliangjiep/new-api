@@ -3,42 +3,61 @@ server:
 spring:
   application:
     name: xin-ai-api
-  # 行内注释3：全局 snake_case 命名策略 —— 接口文档与前端契约（apps/web/src/lib/contract.ts）
+  # 行内注释1：全局 snake_case 命名策略 —— 接口文档与前端契约（apps/web/src/lib/contract.ts）
   # 统一使用下划线字段名（model_key / quote_fingerprint / asset_id ...），
   # 这里开启后，record 的 camelCase 属性会自动映射为 snake_case，
   # 显式标注 @JsonProperty 的字段（request_id / trace_id / page_size）不受影响。
   jackson:
     property-naming-strategy: SNAKE_CASE
     default-property-inclusion: always
-  # 行内注释1：本期存储层为内存实现（MemStore），先关闭数据源 / Flyway / MyBatis-Plus 自动装配，
-  # 待 PostgreSQL 环境就绪后再放开（见 docs/new-ai-后端接口实现状态-V1.md 的 TODO 清单）。
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
-      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
-      - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration
+
+  # 行内注释2：MySQL 数据源 —— 本地 MySQL 8.0。
+  # 行内注释3：启动参数用环境变量覆盖，避免把密码写进仓库。
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:xin_ai}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 4
+      connection-timeout: 30000
+      pool-name: xin-ai-pool
+
+  # 行内注释4：Flyway 管理 MySQL 表结构 —— V1 种子数据 + V2 业务表。
   flyway:
-    enabled: false
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  # 行内注释5：Redis（本地）—— 用于验证码/会话/幂等键/目录缓存。
+  # 行内注释6：Redis 不可用时不阻塞启动 —— 依赖 Redis 的功能自动降级到内存。
   data:
     redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      timeout: 3000ms
       repositories:
         enabled: false
-  redis:
-    host: localhost
-    port: 6379
-    timeout: 3000ms
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+
 xin:
+  # 行内注释7：存储实现 —— mysql 用 MySqlDataStore，memory 用 MemStore。
+  store:
+    type: ${XIN_STORE_TYPE:mysql}
+  # 行内注释8：中转站密钥加密口令 —— 生产务必用环境变量覆盖。
+  channel:
+    key-secret: ${XIN_CHANNEL_KEY_SECRET:xin-ai-dev-channel-secret}
   jwt:
-    # 行内注释2：生产环境务必用环境变量 XIN_JWT_SECRET 覆盖。
+    # 行内注释9：生产环境务必用环境变量 XIN_JWT_SECRET 覆盖。
     secret: ${XIN_JWT_SECRET:xin-ai-dev-secret-change-me}
     access-ttl-seconds: 900
     refresh-ttl-seconds: 2592000
+
 logging:
   level:
     com.xin.ai: INFO
+    org.flywaydb: INFO

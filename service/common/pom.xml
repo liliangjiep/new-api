@@ -17,8 +17,9 @@
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-cache</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-aop</artifactId></dependency>
-    <!-- 行内注释1：Redisson 暂不引入 —— 本机无 Redis 时 starter 会阻塞启动，
-         待 Redis 环境就绪后连同 RedisTokenBucket 一起补回（见状态文档 TODO）。 -->
+    <!-- 行内注释1：本地 Redis —— 验证码/会话/幂等键/目录缓存。
+         Redis 不可用时 RedisService 会自动降级到进程内缓存，不会阻塞启动。 -->
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
     <dependency><groupId>com.github.ben-manes.caffeine</groupId><artifactId>caffeine</artifactId></dependency>
     <dependency><groupId>io.github.resilience4j</groupId><artifactId>resilience4j-circuitbreaker</artifactId><version>${resilience4j.version}</version></dependency>
     <!-- TODO(API): 按需补 jjwt / okhttp / springdoc -->

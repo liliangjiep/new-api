@@ -2,7 +2,7 @@ package com.xin.ai.domain.service;
 
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -31,9 +31,9 @@ public class AssetService {
     private static final long MAX_VIDEO = 500L * 1024 * 1024;
     private static final long MAX_AUDIO = 50L * 1024 * 1024;
 
-    private final MemStore store;
+    private final DataStore store;
 
-    public AssetService(MemStore store) {
+    public AssetService(DataStore store) {
         this.store = store;
     }
 

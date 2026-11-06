@@ -2,7 +2,7 @@ package com.xin.ai.domain.service;
 
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.util.List;
 import java.util.Map;
@@ -23,9 +23,9 @@ public class DigitalHumanService {
     public static final String T_SLOTS = "voice_slots";
     public static final String T_AUTHORIZATIONS = "authorizations";
 
-    private final MemStore store;
+    private final DataStore store;
 
-    public DigitalHumanService(MemStore store) {
+    public DigitalHumanService(DataStore store) {
         this.store = store;
     }
 

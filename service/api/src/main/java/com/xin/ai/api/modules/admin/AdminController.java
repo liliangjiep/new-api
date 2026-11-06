@@ -210,8 +210,10 @@ public class AdminController extends BaseController {
     @PostMapping("/channels")
     public ApiResponse<Map<String, Object>> upsertChannel(@CurrentUser AuthContext.Principal user,
             @RequestBody ChannelRequest req) {
+        // 行内注释1：apiKey 传空串表示保留原密钥；templateJson 传空表示用内置协议模板。
         return ok(admin.upsertChannel(user.userId(), req.id(), req.name(), req.provider(),
-                req.baseUrl(), req.priority(), req.rpmLimit(), req.costRatio()));
+                req.baseUrl(), req.apiKey(), req.protocol(), req.templateJson(), req.capabilities(),
+                req.priority(), req.rpmLimit(), req.costRatio(), req.status(), req.remark()));
     }
 
     @PatchMapping("/channels/{id}")
@@ -237,7 +239,7 @@ public class AdminController extends BaseController {
             @RequestBody EndpointRequest req) {
         return ok(admin.upsertEndpoint(user.userId(), req.id(), req.modelKey(), req.displayName(),
                 req.channelId(), req.baseUrl(), req.upstreamModel(), req.timeoutMs(),
-                req.maxRetries(), req.sortOrder(), req.enabled()));
+                req.maxRetries(), req.sortOrder(), req.enabled(), req.paramMapJson(), req.templateJson()));
     }
 
     @PatchMapping("/endpoints/{id}")
@@ -399,14 +401,19 @@ public class AdminController extends BaseController {
 
     public record ScopeRequest(List<String> ids, String scope) {}
 
+    /**
+     * 中转站请求体 —— apiKey 落库前加密；templateJson 描述该站的协议差异。
+     * 行内注释2：新增一个中转站只需填 name / baseUrl / apiKey / protocol（及可选 templateJson）。
+     */
     public record ChannelRequest(String id, String name, String provider, String baseUrl,
-            Integer priority, Integer rpmLimit, Double costRatio) {}
+            String apiKey, String protocol, String templateJson, String capabilities,
+            Integer priority, Integer rpmLimit, Double costRatio, String status, String remark) {}
 
     public record ChannelStatusRequest(String status) {}
 
     public record EndpointRequest(String id, String modelKey, String displayName, String channelId,
             String baseUrl, String upstreamModel, Integer timeoutMs, Integer maxRetries,
-            Integer sortOrder, Boolean enabled) {}
+            Integer sortOrder, Boolean enabled, String paramMapJson, String templateJson) {}
 
     public record EndpointToggleRequest(Boolean enabled) {}
 

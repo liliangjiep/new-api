@@ -71,6 +71,19 @@
   </dependencyManagement>
 
   <build>
+    <plugins>
+      <!-- 行内注释5：必须显式声明编译插件 —— pluginManagement 只在子模块声明该插件时才生效，
+           否则用的是 Maven super-POM 的老版本默认（不认 -parameters），
+           运行期 Spring 无法推断 @PathVariable / @RequestParam 的参数名。 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <parameters>true</parameters>
+        </configuration>
+      </plugin>
+    </plugins>
     <pluginManagement>
       <plugins>
         <plugin>

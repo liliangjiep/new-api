@@ -13,6 +13,13 @@
   <name>xin.ai domain</name>
   <dependencies>
     <dependency><groupId>com.xin.ai</groupId><artifactId>xin-ai-common</artifactId><version>${project.version}</version></dependency>
+    <!-- 行内注释1：model-adapters 提供多中转站兼容的协议模板与回退路由。
+         之前是 api → model-adapters → domain 的单向依赖，
+         现在 domain 需要 EndpointSnapshot/RelayTemplate，故调整为 domain → model-adapters，
+         同时 model-adapters 不再依赖 domain（见该模块 pom）。 -->
+    <dependency><groupId>com.xin.ai</groupId><artifactId>xin-ai-model-adapters</artifactId><version>${project.version}</version></dependency>
+    <!-- 行内注释2：MySQL 存储实现需要 JDBC。 -->
+    <dependency><groupId>org.springframework</groupId><artifactId>spring-jdbc</artifactId></dependency>
     <dependency><groupId>com.baomidou</groupId><artifactId>mybatis-plus-boot-starter</artifactId></dependency>
   </dependencies>
 </project>

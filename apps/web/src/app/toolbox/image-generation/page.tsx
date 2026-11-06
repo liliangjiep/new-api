@@ -15,6 +15,8 @@ import { PopoverSelect } from "@/components/features/PopoverSelect";
 import { SkillSelector, type SkillItem } from "@/components/features/SkillSelector";
 import { useToast } from "@/components/features/ToastHost";
 import { IMAGE_NAV } from "@/lib/skills";
+import { runTaskToCompletion, type TaskRecord } from "@/lib/backend/tasks";
+import { ApiError } from "@/lib/api";
 
 const IMAGE_SKILLS: SkillItem[] = IMAGE_NAV.flatMap((s) =>
   s.items.map((i) => {
@@ -52,6 +54,31 @@ const IMAGE_SKILLS: SkillItem[] = IMAGE_NAV.flatMap((s) =>
 const MAX_REFS = 9;
 const MAX_PROMPT = 2000;
 
+/**
+ * 行内注释1：图片设置 → model_key / spec。
+ * 后端定价表按分辨率分档（1K/2K/4K），分辨率决定 model_key 与积分。
+ */
+function resolveModel(setting: string, model: string): { modelKey: string; spec: string } {
+  const res = /(\dK)/.exec(setting)?.[1] ?? "1K";
+  const map: Record<string, { modelKey: string; spec: string }> = {
+    "1K": { modelKey: "image.t2i.1k", spec: "1K" },
+    "2K": { modelKey: "image.t2i.2k", spec: "2K" },
+    "4K": { modelKey: "image.t2i.4k", spec: "4K" },
+  };
+  const picked = map[res] ?? map["1K"];
+  // 行内注释1.1：Fast 模型走 1K 档（后端定价 LC Image 2.5 Fast = image.t2i.1k）。
+  if (model.includes("Fast")) {
+    return { modelKey: "image.t2i.1k", spec: "1K" };
+  }
+  return picked;
+}
+
+/** 行内注释2：宽高比 → 上游 size 参数。 */
+function resolveSize(setting: string): string {
+  const m = /(1:1|3:4|4:3|16:9|9:16)/.exec(setting);
+  return m?.[1] ?? "1:1";
+}
+
 export default function ImageGenerationPage() {
   const { push } = useToast();
   const [skill, setSkill] = useState<string | null>(null);
@@ -62,19 +89,58 @@ export default function ImageGenerationPage() {
   const [tab, setTab] = useState("favorites");
   const [results, setResults] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentTask, setCurrentTask] = useState<TaskRecord | null>(null);
 
-  const gen = () => {
+  /**
+   * 行内注释3：真生成 —— 报价 → 提交 → 轮询到终态 → 展示上游返回的真实图片 URL。
+   * 后端内部已做多中转站回退；前端只关心最终 result_urls。
+   */
+  const gen = async () => {
     if (!prompt.trim()) {
       push({ tone: "warning", title: "请先描述画面" });
       return;
     }
     setBusy(true);
-    setTimeout(() => {
-      setResults(["/images/toapi/result-1.png", "/images/toapi/result-2.png"]);
+    setProgress(0);
+    setResults([]);
+    try {
+      const { modelKey, spec } = resolveModel(setting, model);
+      const task = await runTaskToCompletion(
+        {
+          modelKey,
+          spec,
+          count: 1,
+          params: { prompt: prompt.trim(), size: resolveSize(setting) },
+        },
+        {
+          onTaskCreated: (t) => setCurrentTask(t),
+          onProgress: (t) => setProgress(t.progress ?? 0),
+        },
+      );
+      setCurrentTask(task);
+      if (task.status === "succeeded") {
+        const urls = task.result?.result_urls ?? [];
+        setResults(urls);
+        setTab("examples");
+        push({
+          tone: "success",
+          title: "图片已生成",
+          description: urls.length > 0 ? `由 ${task.result?.channel_name ?? "中转站"} 返回` : undefined,
+        });
+      } else {
+        push({
+          tone: "warning",
+          title: "生成失败",
+          description: task.fail_reason || task.error_code || "上游未返回结果",
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "生成失败，请稍后重试";
+      push({ tone: "warning", title: "生成失败", description: msg });
+    } finally {
       setBusy(false);
-      setTab("examples");
-      push({ tone: "success", title: "图片已生成" });
-    }, 1500);
+    }
   };
 
   return (
@@ -285,7 +351,7 @@ export default function ImageGenerationPage() {
                 </div>
 
                 <SubmitBar
-                  label="立即生成图片"
+                  label={busy && progress > 0 ? `生成中 ${progress}%` : "立即生成图片"}
                   credits={prompt.trim() ? 4 : null}
                   disabled={!prompt.trim()}
                   loading={busy}

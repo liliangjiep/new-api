@@ -3,7 +3,7 @@ package com.xin.ai.domain.service;
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
 import com.xin.ai.domain.catalog.Catalog;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.util.List;
 import java.util.Map;
@@ -23,11 +23,11 @@ public class VideoToolService {
     public static final String T_STONE_REFINES = "stone_refine_queue";
     public static final String T_EC_ITEMS = "ecommerce_set_items";
 
-    private final MemStore store;
+    private final DataStore store;
     private final TaskOrchestrator tasks;
     private final BillingService billing;
 
-    public VideoToolService(MemStore store, TaskOrchestrator tasks, BillingService billing) {
+    public VideoToolService(DataStore store, TaskOrchestrator tasks, BillingService billing) {
         this.store = store;
         this.tasks = tasks;
         this.billing = billing;

@@ -12,8 +12,9 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * 适配器模块装配。
- * 行内注释1：ToApiAdapter 为主力（图片先行打通），RelayAdapter 保留给通用中转通道。
- * 行内注释2：Endpoint 快照来自 model_endpoints 表，运行期由后台改价/切通道后失效缓存。
+ * 行内注释1：RelayAdapter 是主力 —— 通用中转站适配器，靠 DB 里的协议模板吃下所有中转站。
+ * 行内注释2：ToApiAdapter 保留为「硬编码 ToAPI 形态」的专用实现，便于与通用适配器对照。
+ * 行内注释3：Endpoint 快照来自 model_endpoints 表，后台改价/切通道后失效缓存。
  */
 @Configuration
 @EnableConfigurationProperties(ToApiProperties.class)
@@ -24,6 +25,9 @@ public class AdapterConfig {
         return new ModelEndpointRegistry();
     }
 
+    /**
+     * 多中转站回退路由 —— 熔断、sticky 优先、错误分类回退都在这里。
+     */
     @Bean
     public ChannelRouter channelRouter() {
         return new ChannelRouter();
@@ -34,8 +38,11 @@ public class AdapterConfig {
         return new ToApiAdapter(props, mapper);
     }
 
+    /**
+     * 通用中转站适配器 —— 一个适配器吃 DB 配置，兼容所有中转站。
+     */
     @Bean
-    public RelayAdapter relayAdapter() {
-        return new RelayAdapter();
+    public RelayAdapter relayAdapter(ObjectMapper mapper) {
+        return new RelayAdapter(mapper);
     }
 }

@@ -3,7 +3,7 @@ package com.xin.ai.domain.service;
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
 import com.xin.ai.domain.catalog.Catalog;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,9 +22,9 @@ public class DiscoverService {
 
     public static final String T_ITEMS = "discover_items";
 
-    private final MemStore store;
+    private final DataStore store;
 
-    public DiscoverService(MemStore store) {
+    public DiscoverService(DataStore store) {
         this.store = store;
     }
 

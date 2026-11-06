@@ -15,6 +15,14 @@
     <dependency><groupId>com.xin.ai</groupId><artifactId>xin-ai-common</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.xin.ai</groupId><artifactId>xin-ai-domain</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.xin.ai</groupId><artifactId>xin-ai-model-adapters</artifactId><version>${project.version}</version></dependency>
+
+    <!-- 行内注释1：MySQL 驱动 + Flyway —— 表结构与种子数据由迁移脚本管理。 -->
+    <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><scope>runtime</scope></dependency>
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId><version>${flyway.version}</version></dependency>
+    <!-- 行内注释2：Flyway 的 MySQL 支持需单独引入 flyway-mysql 模块（Flyway 10+ 拆分）。 -->
+    <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-mysql</artifactId><version>${flyway.version}</version></dependency>
+
+    <!-- 行内注释3：本地 Redis —— 验证码/会话/幂等键/目录缓存。 -->
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
   </dependencies>
 </project>

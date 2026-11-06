@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { WorkspaceShell } from "@/components/features/WorkspaceShell";
 import { useToast } from "@/components/features/ToastHost";
+import { getBalance, getLedger, type BalanceView, type LedgerItem } from "@/lib/backend/points";
+import { ApiError } from "@/lib/api";
 
 /*
  * 原站 /account（实测 1:1，2026-10-30）
@@ -62,6 +64,44 @@ export default function AccountPage() {
   const { push } = useToast();
   const [selType, setSelType] = useState(0);
   const [selTool, setSelTool] = useState(0);
+  // 行内注释1：真数据 —— 余额与明细走后端 /points/balance 与 /points/ledger。
+  const [balance, setBalance] = useState<BalanceView | null>(null);
+  const [ledger, setLedger] = useState<LedgerItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  /**
+   * 行内注释2：类型筛选映射 —— 前端展示名 → 后端 ledger type。
+   */
+  const TYPE_FILTER: Record<number, string | undefined> = {
+    0: undefined,
+    1: "consume",
+    2: "refund",
+    3: "recharge",
+    4: "bonus",
+  };
+
+  const load = useCallback(async (typeIndex: number) => {
+    setLoading(true);
+    try {
+      const [b, l] = await Promise.all([
+        getBalance(),
+        getLedger({ page: 1, pageSize: 50, type: TYPE_FILTER[typeIndex] }),
+      ]);
+      setBalance(b);
+      setLedger(l.data ?? []);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "加载失败";
+      push({ tone: "warning", title: "加载积分失败", description: msg });
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    void load(selType);
+  }, [load, selType]);
+
   return (
     <WorkspaceShell>
       <section className="relative z-[1] mx-auto flex w-full max-w-shell flex-col gap-6 bg-background px-4 py-4 sm:px-6 sm:py-5 lg:px-10 lg:py-6">
@@ -79,10 +119,11 @@ export default function AccountPage() {
                 <p className="text-xs font-medium text-muted">可用积分</p>
                 <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3">
                   <span className="credit-value text-2xl font-credit font-semibold tracking-tight text-foreground sm:text-3xl">
-                    —
+                    {balance ? balance.available.toFixed(2) : "—"}
                   </span>
                   <span className="credit-value text-xs font-credit tabular-nums text-subtle">
-                    = 订阅积分 0.00 + 充值积分 0.00
+                    = 冻结 {balance ? balance.frozen.toFixed(2) : "0.00"} · 有效期至{" "}
+                    {balance?.expires_at ?? "永久有效"}
                   </span>
                 </div>
               </div>
@@ -97,9 +138,11 @@ export default function AccountPage() {
                 <div className="min-w-0">
                   <p className="text-[11px] font-medium text-muted">充值积分</p>
                   <p className="credit-value mt-1 font-credit text-lg font-semibold tabular-nums text-foreground">
-                    0.00
+                    {balance ? balance.available.toFixed(2) : "0.00"}
                   </p>
-                  <p className="mt-0.5 text-[10px] text-subtle">-</p>
+                  <p className="mt-0.5 text-[10px] text-subtle">
+                    {balance?.expires_at ? `至 ${balance.expires_at}` : "-"}
+                  </p>
                 </div>
                 <div className="account-balance-actions flex shrink-0 flex-wrap gap-2">
                   <button
@@ -178,9 +221,46 @@ export default function AccountPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-dashed px-3 py-8 text-center text-xs text-muted sm:text-sm">
-              没有匹配的明细
-            </div>
+            {loading ? (
+              <div className="rounded-xl border border-dashed px-3 py-8 text-center text-xs text-muted sm:text-sm">
+                加载中…
+              </div>
+            ) : ledger.length === 0 ? (
+              <div className="rounded-xl border border-dashed px-3 py-8 text-center text-xs text-muted sm:text-sm">
+                没有匹配的明细
+              </div>
+            ) : (
+              <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-xl border border-line">
+                {ledger.map((it) => (
+                  <li key={it.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="truncate text-xs font-medium text-foreground">
+                        {it.note || it.type}
+                      </span>
+                      <span className="text-[10px] text-subtle">
+                        {it.created_at}
+                        {it.task_id ? ` · ${it.task_id}` : ""}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span
+                        className={
+                          it.amount >= 0
+                            ? "credit-value text-xs font-credit tabular-nums text-accent-deep"
+                            : "credit-value text-xs font-credit tabular-nums text-foreground"
+                        }
+                      >
+                        {it.amount >= 0 ? "+" : ""}
+                        {it.amount}
+                      </span>
+                      <span className="credit-value text-[10px] tabular-nums text-subtle">
+                        余 {it.balance}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         </div>
       </section>

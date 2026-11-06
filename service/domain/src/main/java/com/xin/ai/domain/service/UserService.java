@@ -2,7 +2,7 @@ package com.xin.ai.domain.service;
 
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,9 +21,9 @@ public class UserService {
     private static final int NICKNAME_MAX = 20;
     private static final int BIO_MAX = 120;
 
-    private final MemStore store;
+    private final DataStore store;
 
-    public UserService(MemStore store) {
+    public UserService(DataStore store) {
         this.store = store;
     }
 

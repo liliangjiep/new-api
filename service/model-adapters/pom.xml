@@ -13,9 +13,10 @@
   <name>xin.ai model-adapters</name>
   <dependencies>
     <dependency><groupId>com.xin.ai</groupId><artifactId>xin-ai-common</artifactId><version>${project.version}</version></dependency>
-    <dependency><groupId>com.xin.ai</groupId><artifactId>xin-ai-domain</artifactId><version>${project.version}</version></dependency>
+    <!-- 行内注释1：不再依赖 domain —— 适配层只依赖协议定义（ModelAdapter / RelayTemplate），
+         这些类在本模块内。domain 反过来依赖本模块取 EndpointSnapshot，避免循环依赖。 -->
     <dependency><groupId>io.github.resilience4j</groupId><artifactId>resilience4j-circuitbreaker</artifactId><version>${resilience4j.version}</version></dependency>
-    <!-- 行内注释1：ToAPI 适配器需要 Jackson 做请求/响应序列化。 -->
+    <!-- 行内注释2：适配器需要 Jackson 做请求/响应序列化。 -->
     <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
   </dependencies>
 </project>

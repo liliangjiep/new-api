@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/stores";
-import { setToken } from "@/lib/api";
+import { sendSmsCode, verifySmsCode } from "@/lib/backend/auth";
+import { ApiError } from "@/lib/api";
+import { useToast } from "@/components/features/ToastHost";
 
 /**
  * 原站 new-ai 首页登录/注册弹窗（2026-10-31 实测逐字复刻）
@@ -49,6 +51,7 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const params = useSearchParams();
   const setUser = useAuthStore((s) => s.setUser);
+  const { push } = useToast();
 
   const [mode, setMode] = useState<Mode>("phone");
   const [phone, setPhone] = useState("");
@@ -58,6 +61,9 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
   const [agreed, setAgreed] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [error, setError] = useState("");
+  // 行内注释1：真登录状态 —— sending 表示验证码请求在飞，submitting 表示登录在飞。
+  const [sending, setSending] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Esc 关闭（原站 .modal-login-close + modal-backdrop）
   useEffect(() => {
@@ -81,7 +87,9 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
     }, 1000);
   };
 
-  const sendCode = () => {
+  // 行内注释2：真发验证码 —— 走后端 /auth/sms/send，Redis 做 60s 冷却；
+  //             体验版后端会回传 dev_code，直接填入输入框方便联调。
+  const sendCode = async () => {
     if (mode === "phone") {
       if (!/^1\d{10}$/.test(phone.replace(/\s/g, ""))) {
         setError("请输入正确的 11 位手机号");
@@ -94,10 +102,24 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
       }
     }
     setError("");
-    startCountdown();
+    setSending(true);
+    try {
+      const r = await sendSmsCode(phone.replace(/\s/g, ""));
+      if (r?.dev_code) {
+        setCode(r.dev_code);
+        push({ tone: "neutral", title: "体验版验证码已自动填入", description: r.dev_code });
+      }
+      startCountdown();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "验证码发送失败，请稍后重试";
+      setError(msg);
+      push({ tone: "warning", title: "发送失败", description: msg });
+    } finally {
+      setSending(false);
+    }
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!agreed) {
       setError("请先阅读并同意用户协议与隐私政策");
       return;
@@ -111,15 +133,24 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
       return;
     }
     setError("");
-    setToken("mock_access_token");
-    setUser({
-      id: "u_mock",
-      nickname: mode === "phone" ? phone : email,
-      role: "user",
-    });
-    const next = params.get("next") || "/";
-    router.push(next);
-    onClose();
+    setSubmitting(true);
+    try {
+      const r = await verifySmsCode(phone.replace(/\s/g, ""), code.trim());
+      setUser({
+        id: r.user?.id ?? "",
+        nickname: r.user?.nickname ?? (mode === "phone" ? phone : email),
+        role: r.user?.role ?? "user",
+      });
+      const next = params.get("next") || "/";
+      router.push(next);
+      onClose();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "登录失败，请稍后重试";
+      setError(msg);
+      push({ tone: "warning", title: "登录失败", description: msg });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const tabClass = (active: boolean) =>
@@ -270,10 +301,10 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
                           <button
                             type="button"
                             onClick={sendCode}
-                            disabled={countdown > 0}
+                            disabled={countdown > 0 || sending}
                             className="shrink-0 border-0 bg-transparent p-0 text-right text-[14px] transition-opacity disabled:pointer-events-none font-normal text-blue-600 transition-colors hover:text-blue-700   disabled:opacity-40"
                           >
-                            {countdown > 0 ? `${countdown}s 后重发` : "获取验证码"}
+                            {sending ? "发送中…" : countdown > 0 ? `${countdown}s 后重发` : "获取验证码"}
                           </button>
                         </div>
                       </div>
@@ -361,9 +392,10 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
 
                 <button
                   type="submit"
+                  disabled={submitting}
                   className="auth-login-submit mt-6 w-full rounded-lg border-0 bg-accent py-2 text-[12px] font-semibold tracking-wide text-on-accent shadow-auth-primary transition-[transform,box-shadow,opacity,background]  hover:shadow-auth-primary-hover active:translate-y-[0.5px] disabled:opacity-55 disabled:active:translate-y-0"
                 >
-                  登录/注册
+                  {submitting ? "登录中…" : "登录/注册"}
                 </button>
               </form>
             </div>

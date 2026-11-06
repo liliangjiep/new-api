@@ -2,7 +2,7 @@ package com.xin.ai.domain.service;
 
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.util.List;
 import java.util.Map;
@@ -22,9 +22,9 @@ public class CanvasService {
     public static final String T_VERSIONS = "canvas_versions";
     public static final String T_TEMPLATES = "canvas_templates";
 
-    private final MemStore store;
+    private final DataStore store;
 
-    public CanvasService(MemStore store) {
+    public CanvasService(DataStore store) {
         this.store = store;
     }
 

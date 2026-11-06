@@ -20,15 +20,39 @@ public interface ModelAdapter {
         throw new UnsupportedOperationException("poll not supported: " + capability());
     }
 
-    // 行内注释6：请求上下文 —— Endpoint 快照 + 业务参数 + 幂等键。
+    /**
+     * 接入点快照 —— 一个 model_key 在某个中转站上的落点。
+     * 行内注释6：多中转站兼容的关键 —— 快照里带 channelId 与协议模板，
+     *             换站只换快照，适配器代码不动。
+     * 行内注释7：apiKey 由调用方从通道表读出并注入（快照是一次性构造，不做长期缓存的密钥）。
+     */
     record EndpointSnapshot(
             String modelKey,
+            /** 中转站 base_url。 */
             String baseUrl,
+            /** 上游模型名（该站支持的模型标识）。 */
             String upstreamModel,
-            String secretRef,
+            /** 所属中转站 ID。 */
+            String channelId,
+            /** 中转站名称，仅用于日志与审计。 */
+            String channelName,
+            /** 该站的 API Key。 */
+            String apiKey,
+            /** 协议模板 —— 决定请求/响应形态。 */
+            RelayTemplate template,
+            /** 请求超时毫秒。 */
             int timeoutMs,
+            /** 最大重试次数。 */
             int maxRetries,
-            Map<String, Object> configJson) {}
+            /** 回退序（小的优先）。 */
+            int sortOrder,
+            /** 额外配置。 */
+            Map<String, Object> configJson) {
+
+        public EndpointSnapshot {
+            configJson = configJson == null ? Map.of() : configJson;
+        }
+    }
 
     record ModelRequest(
             EndpointSnapshot endpoint,

@@ -2,7 +2,7 @@ package com.xin.ai.domain.service;
 
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.util.List;
 import java.util.Map;
@@ -23,9 +23,9 @@ public class CommerceService {
     public static final String T_SETTLEMENTS = "affiliate_settlements";
     public static final String T_WITHDRAWALS = "affiliate_withdrawals";
 
-    private final MemStore store;
+    private final DataStore store;
 
-    public CommerceService(MemStore store) {
+    public CommerceService(DataStore store) {
         this.store = store;
     }
 

@@ -15,6 +15,8 @@ import { PopoverSelect } from "@/components/features/PopoverSelect";
 import { SkillSelector, type SkillItem } from "@/components/features/SkillSelector";
 import { useToast } from "@/components/features/ToastHost";
 import { VIDEO_NAV } from "@/lib/skills";
+import { runTaskToCompletion, type TaskRecord } from "@/lib/backend/tasks";
+import { ApiError } from "@/lib/api";
 
 const VIDEO_SKILLS: SkillItem[] = VIDEO_NAV.flatMap((s) =>
   s.items.map((i) => {
@@ -54,6 +56,32 @@ const VIDEO_SKILLS: SkillItem[] = VIDEO_NAV.flatMap((s) =>
 const MAX_MATERIALS = 40;
 const MAX_PROMPT = 12000;
 
+/**
+ * 行内注释1：视频设置 → model_key / spec。
+ * 后端定价表：video.t2v.720p（优速 14 分）、video.t2v.mini（轻量 3 分）、video.i2v.kling（参考生 18 分）。
+ */
+function resolveVideoModel(model: string, setting: string): { modelKey: string; spec: string } {
+  if (model.includes("Kling")) {
+    return { modelKey: "video.i2v.kling", spec: "Kling 4.0 720P 5 秒" };
+  }
+  if (model.includes("Mini")) {
+    return { modelKey: "video.t2v.mini", spec: "720P 5 秒" };
+  }
+  // 行内注释1.1：480P 批量档 → video.batch.480p。
+  if (/480P/i.test(setting) && /批量|batch/i.test(model + setting)) {
+    return { modelKey: "video.batch.480p", spec: "5 镜 × 5 秒 480P" };
+  }
+  return { modelKey: "video.t2v.720p", spec: "720P 5 秒" };
+}
+
+/** 行内注释2：宽高比 + 时长 → 上游参数。 */
+function resolveVideoParams(setting: string): Record<string, unknown> {
+  const ratio = /(1:1|3:4|4:3|16:9|9:16)/.exec(setting)?.[1] ?? "9:16";
+  const seconds = Number(/(\d+)s/.exec(setting)?.[1] ?? 5);
+  const resolution = /(\d{3,4}P)/i.exec(setting)?.[1]?.toUpperCase() ?? "720P";
+  return { aspect_ratio: ratio, duration: seconds, resolution };
+}
+
 export default function VideoGenerationPage() {
   const { push } = useToast();
   const [skill, setSkill] = useState<string | null>(null);
@@ -64,19 +92,57 @@ export default function VideoGenerationPage() {
   const [tab, setTab] = useState("examples");
   const [results, setResults] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentTask, setCurrentTask] = useState<TaskRecord | null>(null);
 
-  const gen = () => {
+  /**
+   * 行内注释3：真生成 —— 报价 → 提交 → 轮询终态 → 展示上游视频 URL。
+   */
+  const gen = async () => {
     if (!prompt.trim()) {
       push({ tone: "warning", title: "请先描述视频画面" });
       return;
     }
     setBusy(true);
-    setTimeout(() => {
-      setResults(["/images/toapi/result-1.png", "/images/toapi/result-2.png"]);
+    setProgress(0);
+    setResults([]);
+    try {
+      const { modelKey, spec } = resolveVideoModel(model, setting);
+      const task = await runTaskToCompletion(
+        {
+          modelKey,
+          spec,
+          count: 1,
+          params: { prompt: prompt.trim(), ...resolveVideoParams(setting) },
+        },
+        {
+          onTaskCreated: (t) => setCurrentTask(t),
+          onProgress: (t) => setProgress(t.progress ?? 0),
+        },
+      );
+      setCurrentTask(task);
+      if (task.status === "succeeded") {
+        const urls = task.result?.result_urls ?? [];
+        setResults(urls);
+        setTab("examples");
+        push({
+          tone: "success",
+          title: "视频已生成",
+          description: urls.length > 0 ? `由 ${task.result?.channel_name ?? "中转站"} 返回` : undefined,
+        });
+      } else {
+        push({
+          tone: "warning",
+          title: "生成失败",
+          description: task.fail_reason || task.error_code || "上游未返回结果",
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "生成失败，请稍后重试";
+      push({ tone: "warning", title: "生成失败", description: msg });
+    } finally {
       setBusy(false);
-      setTab("examples");
-      push({ tone: "success", title: "视频已生成" });
-    }, 1500);
+    }
   };
 
   return (
@@ -353,8 +419,8 @@ export default function VideoGenerationPage() {
 
                 <div className="generation-controller-submit video-generation-submit-bar sticky bottom-0 z-[2] flex shrink-0 flex-col">
                   <SubmitBar
-                    label="立即生成视频"
-                    credits={prompt.trim() ? 12 : null}
+                    label={busy && progress > 0 ? `生成中 ${progress}%` : "立即生成视频"}
+                    credits={prompt.trim() ? 14 : null}
                     disabled={!prompt.trim()}
                     loading={busy}
                     onClick={gen}
@@ -402,12 +468,14 @@ export default function VideoGenerationPage() {
                         {results.length > 0 ? (
                           <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
                             {results.map((s, i) => (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                key={i}
+                              // 行内注释4：视频结果用 <video> 播放，图片结果用 <img> 预览。
+                              <video
+                                key={`v-${i}`}
                                 src={s}
-                                alt={`结果 ${i + 1}`}
-                                className="aspect-square w-full rounded-lg border border-line object-cover"
+                                controls
+                                playsInline
+                                preload="metadata"
+                                className="aspect-square w-full rounded-lg border border-line bg-black object-cover"
                               />
                             ))}
                           </div>

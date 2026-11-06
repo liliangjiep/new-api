@@ -3,7 +3,7 @@ package com.xin.ai.domain.service;
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
 import com.xin.ai.domain.catalog.Catalog;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -38,14 +38,18 @@ public class AdminService {
 
     private static final int LARGE_ADJUST_THRESHOLD = 1000;
 
-    private final MemStore store;
+    private final DataStore store;
     private final BillingService billing;
     private final AuthService auth;
+    /** 中转站配置 —— 通道与接入点走 MySQL 强类型表。 */
+    private final RelayConfigService relayConfig;
 
-    public AdminService(MemStore store, BillingService billing, AuthService auth) {
+    public AdminService(DataStore store, BillingService billing, AuthService auth,
+            RelayConfigService relayConfig) {
         this.store = store;
         this.billing = billing;
         this.auth = auth;
+        this.relayConfig = relayConfig;
     }
 
     // ---------------- 用户管理 ----------------
@@ -347,91 +351,65 @@ public class AdminService {
 
     // ---------------- 模型接入 ----------------
 
+    /**
+     * 列出中转站 —— 数据源是 MySQL 的 model_channels 强类型表。
+     * 行内注释1：通道配置不走通用 entity_rows，因为这是你要手工调表的对象，字段要清晰可读。
+     */
     public List<Map<String, Object>> listChannels() {
-        List<Map<String, Object>> all = store.listWhere(T_CHANNELS, r -> true);
-        if (all.isEmpty()) {
-            // 基线：两个示例通道，与前端 admin mock 对齐
-            all = List.of(
-                    Rows.row("id", "ch_relay_a", "name", "relay-a", "provider", "relay", "status", "active",
-                            "capabilities", "image,video", "rpm_limit", 600, "cost_ratio", 0.85, "balance", 12400.0),
-                    Rows.row("id", "ch_official", "name", "official-volc", "provider", "official", "status", "active",
-                            "capabilities", "image,video,lipsync", "rpm_limit", 300, "cost_ratio", 1.0, "balance", 0.0));
-        }
-        return all;
+        return relayConfig.listChannels();
     }
 
+    /**
+     * 保存中转站 —— 密钥加密落库。
+     * 行内注释2：apiKey 传空串表示不改动原密钥。
+     */
     public Map<String, Object> upsertChannel(String operator, String id, String name, String provider,
-            String baseUrl, Integer priority, Integer rpmLimit, double costRatio) {
-        String key = id == null || id.isBlank()
-                ? "ch_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8) : id;
-        store.put(T_CHANNELS, key, Rows.row(
-                "id", key, "name", name, "provider", provider, "base_url", baseUrl,
-                "priority", priority == null ? 100 : priority,
-                "rpm_limit", rpmLimit, "cost_ratio", costRatio,
-                "status", "active", "circuit_state", "closed",
-                "updated_at", Times.full(Times.now()), "updated_by", operator));
-        audit(operator, "通道保存", key, Rows.row("name", name, "base_url", baseUrl), "");
-        return Rows.row("id", key, "name", name, "provider", provider, "status", "active");
+            String baseUrl, String apiKey, String protocol, String templateJson, String capabilities,
+            Integer priority, Integer rpmLimit, Double costRatio, String status, String remark) {
+        Map<String, Object> saved = relayConfig.upsertChannel(operator, id, name, provider, baseUrl,
+                apiKey, protocol, templateJson, capabilities, priority, rpmLimit, costRatio, status, remark);
+        audit(operator, "中转站保存", Rows.str(saved, "id", ""),
+                Rows.row("name", name, "base_url", baseUrl, "protocol", protocol), "");
+        return saved;
     }
 
     public void toggleChannel(String operator, String id, String status) {
-        Map<String, Object> before = store.find(T_CHANNELS, id).orElse(null);
-        store.update(T_CHANNELS, id, Rows.row("status", status, "updated_at", Times.full(Times.now())));
-        audit(operator, "通道状态变更", id,
+        Map<String, Object> before = relayConfig.findChannel(id);
+        relayConfig.toggleChannel(operator, id, status);
+        audit(operator, "中转站状态变更", id,
                 Rows.row("before", before == null ? Map.of() : Rows.str(before, "status"), "after", status), "");
     }
 
+    /** 列出接入点 —— MySQL model_endpoints。 */
     public List<Map<String, Object>> listEndpoints() {
-        List<Map<String, Object>> all = store.listWhere(T_ENDPOINTS, r -> true);
-        if (all.isEmpty()) {
-            all = List.of(
-                    Rows.row("id", "ep_1", "model_key", "image.text2image.2k", "display_name", "LC Image 2.5 Pro",
-                            "channel_id", "ch_official", "base_url", "https://open.volcengineapi.com/v1",
-                            "upstream_model", "lc-image-2.5-pro", "timeout_ms", 60000, "sort_order", 10, "enabled", true),
-                    Rows.row("id", "ep_2", "model_key", "video.t2v.720p", "display_name", "Seedance 2.0",
-                            "channel_id", "ch_relay_a", "base_url", "https://api.relay-a.example/v1",
-                            "upstream_model", "seedance-2-0", "timeout_ms", 300000, "sort_order", 10, "enabled", true),
-                    Rows.row("id", "ep_3", "model_key", "video.t2v.720p", "display_name", "Seedance 2.0（兜底）",
-                            "channel_id", "ch_official", "base_url", "https://open.volcengineapi.com/v1",
-                            "upstream_model", "doubao-seedance-2-0", "timeout_ms", 300000, "sort_order", 20, "enabled", true));
-        }
-        return all;
+        return relayConfig.listEndpoints();
     }
+
 
     public Map<String, Object> upsertEndpoint(String operator, String id, String modelKey, String displayName,
             String channelId, String baseUrl, String upstreamModel, Integer timeoutMs,
-            Integer maxRetries, Integer sortOrder, Boolean enabled) {
-        String key = id == null || id.isBlank()
-                ? "ep_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8) : id;
-        Map<String, Object> patch = Rows.row(
-                "id", key, "model_key", modelKey, "display_name", displayName,
-                "channel_id", channelId, "base_url", baseUrl, "upstream_model", upstreamModel,
-                "timeout_ms", timeoutMs == null ? 30000 : timeoutMs,
-                "max_retries", maxRetries == null ? 2 : maxRetries,
-                "sort_order", sortOrder == null ? 10 : sortOrder,
-                "enabled", enabled == null ? Boolean.TRUE : enabled,
-                "updated_at", Times.full(Times.now()), "updated_by", operator);
-        store.put(T_ENDPOINTS, key, patch);
-        audit(operator, "接入点保存", key, patch, "");
-        return patch;
+            Integer maxRetries,             Integer sortOrder, Boolean enabled, String paramMapJson, String templateJson) {
+        Map<String, Object> saved = relayConfig.upsertEndpoint(operator, id, modelKey, displayName,
+                channelId, baseUrl, upstreamModel, timeoutMs, maxRetries, sortOrder, enabled,
+                paramMapJson, templateJson);
+        audit(operator, "接入点保存", Rows.str(saved, "id", ""), saved, "");
+        return saved;
     }
 
     public void toggleEndpoint(String operator, String id, boolean enabled) {
-        Map<String, Object> before = store.find(T_ENDPOINTS, id).orElse(null);
-        store.update(T_ENDPOINTS, id, Rows.row("enabled", enabled, "updated_at", Times.full(Times.now())));
+        Map<String, Object> before = relayConfig.listEndpoints().stream()
+                .filter(e -> id.equals(Rows.str(e, "id"))).findFirst().orElse(null);
+        relayConfig.toggleEndpoint(operator, id, enabled);
         audit(operator, enabled ? "启用接入点" : "停用接入点", id,
                 Rows.row("before", before == null ? Map.of() : Rows.bool(before, "enabled"), "after", enabled), "");
     }
 
-    // 行内注释5：批量切通道 —— 同一 model_key 全部指向新通道并置 enabled。
+    // 行内注释5：批量切通道 —— 同一 model_key 全部指向新通道。
     public int bulkSwitchChannel(String operator, String modelKey, String channelId) {
-        List<Map<String, Object>> matched = store.listWhere(T_ENDPOINTS,
-                r -> Rows.str(r, "model_key").equals(modelKey));
-        matched.forEach(e -> store.update(T_ENDPOINTS, Rows.str(e, "id"),
-                Rows.row("channel_id", channelId, "updated_at", Times.full(Times.now()), "updated_by", operator)));
+        int count = relayConfig.bulkSwitchChannel(operator, modelKey, channelId);
         audit(operator, "批量切通道", modelKey,
-                Rows.row("channel_id", channelId, "count", matched.size()), "");
-        return matched.size();
+                Rows.row("channel_id", channelId, "count", count), "");
+        return count;
     }
 
     // 行内注释6：接入点变更留痕 —— 单独表，供后台「变更留痕」面板展示。

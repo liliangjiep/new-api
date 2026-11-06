@@ -1,10 +1,11 @@
 package com.xin.ai.domain.service;
 
+import com.xin.ai.common.cache.RedisService;
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
 import com.xin.ai.common.security.JwtUtils;
 import com.xin.ai.common.config.JwtProperties;
-import com.xin.ai.domain.repository.MemStore;
+import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -35,12 +36,15 @@ public class AuthService {
     private static final int LOGIN_FAIL_LOCK_THRESHOLD = 5;
     private static final int LOGIN_FAIL_LOCK_MINUTES = 15;
 
-    private final MemStore store;
+    private final DataStore store;
     private final JwtProperties jwtProperties;
+    /** 行内注释4.1：本地 Redis —— 验证码与发送冷却放 Redis，多实例共享；Redis 挂时自动降级。 */
+    private final RedisService redis;
 
-    public AuthService(MemStore store, JwtProperties jwtProperties) {
+    public AuthService(DataStore store, JwtProperties jwtProperties, RedisService redis) {
         this.store = store;
         this.jwtProperties = jwtProperties;
+        this.redis = redis;
     }
 
     // 行内注释5：发送验证码 —— 冷却期未过直接报错；开发模式验证码固定为 6 位随机并回传给前端（体验版）。
@@ -50,16 +54,11 @@ public class AuthService {
             throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("field", "phone", "message", "手机号格式不正确"));
         }
         LocalDateTime now = Times.now();
-        Map<String, Object> last = store.listWhere(T_CODES, r -> Rows.str(r, "phone").equals(normalized))
-                .stream().max((a, b) -> Rows.str(a, "created_at").compareTo(Rows.str(b, "created_at")))
-                .orElse(null);
-        if (last != null) {
-            LocalDateTime lastAt = Times.parse(Rows.str(last, "created_at"));
-            long elapsed = java.time.Duration.between(lastAt, now).getSeconds();
-            if (elapsed < CODE_COOLDOWN_SECONDS) {
-                throw new BizException(ErrorCode.AUTH_RATE_LIMITED,
-                        Map.of("cooldown", CODE_COOLDOWN_SECONDS - elapsed));
-            }
+        // 行内注释5.1：冷却判定走 Redis（SET NX + TTL），避免并发下连发多条短信。
+        String coolKey = "sms:cool:" + normalized;
+        if (!redis.setIfAbsent(coolKey, "1", java.time.Duration.ofSeconds(CODE_COOLDOWN_SECONDS))) {
+            throw new BizException(ErrorCode.AUTH_RATE_LIMITED,
+                    Map.of("cooldown", CODE_COOLDOWN_SECONDS));
         }
         String code = String.format("%06d", new java.util.Random().nextInt(1000000));
         String id = UUID.randomUUID().toString().replace("-", "");
@@ -67,26 +66,42 @@ public class AuthService {
                 "id", id, "phone", normalized, "code", code,
                 "used", false, "created_at", Times.full(now),
                 "expire_at", Times.full(now.plusSeconds(CODE_TTL_SECONDS))));
+        // 行内注释5.2：验证码同时写 Redis —— 校验时先查 Redis，命中即通过（免一次 DB 查询）。
+        redis.set(smsKey(normalized), code, java.time.Duration.ofSeconds(CODE_TTL_SECONDS));
         // 行内注释6：体验版把验证码直接返回，省掉短信通道联调；生产删除该字段。
         return Rows.row("cooldown", CODE_COOLDOWN_SECONDS, "expires_in", CODE_TTL_SECONDS, "dev_code", code);
+    }
+
+    /** 验证码 Redis key。 */
+    private String smsKey(String phone) {
+        return "sms:code:" + phone;
     }
 
     // 行内注释7：验证码登录/注册 —— 校验码 → 找或建用户 → 发双 Token。
     public Map<String, Object> verifySmsCode(String phone, String code) {
         String normalized = normalizePhone(phone);
-        Map<String, Object> row = store.listWhere(T_CODES,
-                        r -> Rows.str(r, "phone").equals(normalized)
-                                && !Rows.bool(r, "used")
-                                && Rows.str(r, "code").equals(code == null ? "" : code.trim()))
-                .stream().max((a, b) -> Rows.str(a, "created_at").compareTo(Rows.str(b, "created_at")))
-                .orElse(null);
-        if (row == null) {
-            throw new BizException(ErrorCode.AUTH_CODE_INVALID);
+        String input = code == null ? "" : code.trim();
+        // 行内注释7.1：先查 Redis —— 命中即通过，避免每次都扫 DB 验证码表。
+        String cached = redis.get(smsKey(normalized));
+        boolean redisHit = cached != null && cached.equals(input);
+        Map<String, Object> row = null;
+        if (!redisHit) {
+            row = store.listWhere(T_CODES,
+                            r -> Rows.str(r, "phone").equals(normalized)
+                                    && !Rows.bool(r, "used")
+                                    && Rows.str(r, "code").equals(input))
+                    .stream().max((a, b) -> Rows.str(a, "created_at").compareTo(Rows.str(b, "created_at")))
+                    .orElse(null);
+            if (row == null) {
+                throw new BizException(ErrorCode.AUTH_CODE_INVALID);
+            }
+            if (Times.parse(Rows.str(row, "expire_at")).isBefore(Times.now())) {
+                throw new BizException(ErrorCode.AUTH_CODE_INVALID);
+            }
+            store.update(T_CODES, Rows.str(row, "id"), Rows.row("used", true));
         }
-        if (Times.parse(Rows.str(row, "expire_at")).isBefore(Times.now())) {
-            throw new BizException(ErrorCode.AUTH_CODE_INVALID);
-        }
-        store.update(T_CODES, Rows.str(row, "id"), Rows.row("used", true));
+        // 行内注释7.2：用掉即删 —— 同一个验证码不能用第二次。
+        redis.delete(smsKey(normalized));
         Map<String, Object> user = findOrCreateByPhone(normalized);
         return issueTokens(user);
     }

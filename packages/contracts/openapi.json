@@ -1,5 +1,3529 @@
 {
   "openapi": "3.0.0",
-  "info": { "title": "new-ai API", "version": "1.0.0" },
-  "paths": {}
+  "info": {
+    "title": "new-ai API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/auth/sms/send": {
+      "post": {
+        "summary": "发送短信验证码",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsSendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sms/verify": {
+      "post": {
+        "summary": "验证码登录/注册",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password/login": {
+      "post": {
+        "summary": "账号密码登录",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordLoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "summary": "刷新Token",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "summary": "登出",
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "summary": "登录设备列表",
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "summary": "下线设备",
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/me": {
+      "get": {
+        "summary": "当前用户",
+        "tags": [
+          "users"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "更新资料",
+        "tags": [
+          "users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/points/balance": {
+      "get": {
+        "summary": "积分余额",
+        "tags": [
+          "billing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/points/ledger": {
+      "get": {
+        "summary": "积分流水",
+        "tags": [
+          "billing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recharge/packages": {
+      "get": {
+        "summary": "充值套餐",
+        "tags": [
+          "billing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recharge/orders": {
+      "get": {
+        "summary": "订单列表",
+        "tags": [
+          "billing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrdersResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "创建充值订单",
+        "tags": [
+          "billing"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recharge/orders/{no}": {
+      "get": {
+        "summary": "订单详情",
+        "tags": [
+          "billing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recharge/callback/wechat": {
+      "post": {
+        "summary": "微信回调",
+        "tags": [
+          "billing"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recharge/callback/alipay": {
+      "post": {
+        "summary": "支付宝回调",
+        "tags": [
+          "billing"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/credits/adjust": {
+      "post": {
+        "summary": "积分补扣",
+        "tags": [
+          "admin-billing"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/quote": {
+      "post": {
+        "summary": "报价",
+        "tags": [
+          "tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/submit": {
+      "post": {
+        "summary": "提交任务",
+        "tags": [
+          "tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks": {
+      "get": {
+        "summary": "任务列表",
+        "tags": [
+          "tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}": {
+      "get": {
+        "summary": "任务详情",
+        "tags": [
+          "tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}/retry": {
+      "post": {
+        "summary": "重试",
+        "tags": [
+          "tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}/cancel": {
+      "post": {
+        "summary": "取消",
+        "tags": [
+          "tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}/progress": {
+      "get": {
+        "summary": "SSE进度",
+        "tags": [
+          "tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/batches": {
+      "post": {
+        "summary": "批量提交",
+        "tags": [
+          "tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches": {
+      "get": {
+        "summary": "批次列表",
+        "tags": [
+          "tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{id}": {
+      "get": {
+        "summary": "批次详情",
+        "tags": [
+          "tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{id}/events": {
+      "get": {
+        "summary": "批次SSE",
+        "tags": [
+          "tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-segment-retake/quote": {
+      "post": {
+        "summary": "分段重生报价",
+        "tags": [
+          "tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SegmentQuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-segment-retake/submit": {
+      "post": {
+        "summary": "分段重生提交",
+        "tags": [
+          "tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SegmentSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets": {
+      "get": {
+        "summary": "资产列表",
+        "tags": [
+          "assets"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/upload-policy": {
+      "post": {
+        "summary": "直传凭证",
+        "tags": [
+          "assets"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadPolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadPolicyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/complete": {
+      "post": {
+        "summary": "直传完成",
+        "tags": [
+          "assets"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/{id}": {
+      "patch": {
+        "summary": "改名/分组",
+        "tags": [
+          "assets"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAssetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "删除",
+        "tags": [
+          "assets"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assets/batch-delete": {
+      "post": {
+        "summary": "批量删除",
+        "tags": [
+          "assets"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchDeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/asset-groups": {
+      "get": {
+        "summary": "分组列表",
+        "tags": [
+          "assets"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "新建分组",
+        "tags": [
+          "assets"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/discover/feed": {
+      "get": {
+        "summary": "发现流",
+        "tags": [
+          "discover"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/discover/items/{id}": {
+      "get": {
+        "summary": "发现详情",
+        "tags": [
+          "discover"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedItemResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/model-routes/public": {
+      "get": {
+        "summary": "能力路由",
+        "tags": [
+          "public"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pricing/table": {
+      "get": {
+        "summary": "售价表",
+        "tags": [
+          "public"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/skills/image": {
+      "get": {
+        "summary": "图片技能",
+        "tags": [
+          "public"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageSkillsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/skills/video": {
+      "get": {
+        "summary": "视频技能",
+        "tags": [
+          "public"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSkillsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/speech-input/transcribe": {
+      "post": {
+        "summary": "语音转写",
+        "tags": [
+          "agent"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscribeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscribeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/chat": {
+      "post": {
+        "summary": "Agent流式对话",
+        "tags": [
+          "agent"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/sessions": {
+      "get": {
+        "summary": "会话列表",
+        "tags": [
+          "agent"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "新建会话",
+        "tags": [
+          "agent"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/sessions/{id}/messages": {
+      "get": {
+        "summary": "会话消息",
+        "tags": [
+          "agent"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentMessagesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/skills": {
+      "get": {
+        "summary": "技能列表",
+        "tags": [
+          "agent"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSkillsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/cloud-runtime": {
+      "post": {
+        "summary": "云运行时",
+        "tags": [
+          "agent"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudRuntimeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudRuntimeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/cloud-runtime/desktop-session": {
+      "post": {
+        "summary": "桌面会话",
+        "tags": [
+          "agent"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/canvases": {
+      "get": {
+        "summary": "画布列表",
+        "tags": [
+          "canvas"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "新建画布",
+        "tags": [
+          "canvas"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCanvasRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/canvases/{id}": {
+      "get": {
+        "summary": "画布详情",
+        "tags": [
+          "canvas"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "改名",
+        "tags": [
+          "canvas"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameCanvasRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "删除画布",
+        "tags": [
+          "canvas"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/canvases/{id}/graph": {
+      "put": {
+        "summary": "整体存图",
+        "tags": [
+          "canvas"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/canvases/{id}/versions": {
+      "get": {
+        "summary": "版本列表",
+        "tags": [
+          "canvas"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/canvases/{id}/versions/{v}/restore": {
+      "post": {
+        "summary": "版本恢复",
+        "tags": [
+          "canvas"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/canvases/{id}/share": {
+      "post": {
+        "summary": "分享链接",
+        "tags": [
+          "canvas"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/canvas/templates": {
+      "get": {
+        "summary": "画布模板",
+        "tags": [
+          "canvas"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasTemplatesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/avatars": {
+      "get": {
+        "summary": "形象列表",
+        "tags": [
+          "avatar"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvatarsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "新建形象",
+        "tags": [
+          "avatar"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAvatarRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/avatars/{id}/standardize": {
+      "post": {
+        "summary": "形象标准化",
+        "tags": [
+          "avatar"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/voices": {
+      "get": {
+        "summary": "音色列表",
+        "tags": [
+          "avatar"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoicesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "克隆音色",
+        "tags": [
+          "avatar"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneVoiceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/voice-slots": {
+      "get": {
+        "summary": "音色槽位",
+        "tags": [
+          "avatar"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tts/jobs": {
+      "post": {
+        "summary": "TTS任务",
+        "tags": [
+          "avatar"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TtsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/digital-human/jobs": {
+      "post": {
+        "summary": "数字人任务",
+        "tags": [
+          "avatar"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DhRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/authorizations": {
+      "get": {
+        "summary": "授权文件",
+        "tags": [
+          "avatar"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthzResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stone/scene-templates": {
+      "get": {
+        "summary": "场景模板",
+        "tags": [
+          "stone"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTemplatesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stone/effect-jobs": {
+      "post": {
+        "summary": "效果图任务",
+        "tags": [
+          "stone"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EffectJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stone/refine-queue": {
+      "post": {
+        "summary": "精修队列",
+        "tags": [
+          "stone"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefineRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stone/materials": {
+      "get": {
+        "summary": "材质列表",
+        "tags": [
+          "stone"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "新建材质",
+        "tags": [
+          "stone"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMaterialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stone/materials/{id}": {
+      "patch": {
+        "summary": "更新材质",
+        "tags": [
+          "stone"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMaterialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "删除材质",
+        "tags": [
+          "stone"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stone/materials/export": {
+      "post": {
+        "summary": "材质导出",
+        "tags": [
+          "stone"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stone/script-templates": {
+      "get": {
+        "summary": "脚本模板",
+        "tags": [
+          "stone"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptTemplatesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stone/factory-video-jobs": {
+      "post": {
+        "summary": "厂介视频任务",
+        "tags": [
+          "stone"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FactoryVideoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/depth-clone/jobs": {
+      "post": {
+        "summary": "深度复刻",
+        "tags": [
+          "video"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepthCloneRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ecommerce-set/jobs": {
+      "post": {
+        "summary": "商详套图",
+        "tags": [
+          "video"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EcomSetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ecommerce-set/items/{id}/regenerate": {
+      "post": {
+        "summary": "单张重生成",
+        "tags": [
+          "video"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-remix/jobs": {
+      "post": {
+        "summary": "爆款复刻",
+        "tags": [
+          "video"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemixRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-remix-viral/jobs": {
+      "post": {
+        "summary": "一键裂变",
+        "tags": [
+          "video"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemixRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-quality-enhance/jobs": {
+      "post": {
+        "summary": "画质增强",
+        "tags": [
+          "video"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnhanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-subtitle-erase/jobs": {
+      "post": {
+        "summary": "字幕擦除",
+        "tags": [
+          "video"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EraseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-watermark-remove/jobs": {
+      "post": {
+        "summary": "去水印",
+        "tags": [
+          "video"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecensorRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/video-creator/jobs": {
+      "post": {
+        "summary": "视频创意",
+        "tags": [
+          "video"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatorRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invoices": {
+      "get": {
+        "summary": "发票列表",
+        "tags": [
+          "invoice"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "申请开票",
+        "tags": [
+          "invoice"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvoiceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/affiliate/overview": {
+      "get": {
+        "summary": "分销概览",
+        "tags": [
+          "affiliate"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AffiliateOverviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/affiliate/settlements": {
+      "get": {
+        "summary": "结算单",
+        "tags": [
+          "affiliate"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/affiliate/withdrawals": {
+      "post": {
+        "summary": "提现",
+        "tags": [
+          "affiliate"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "summary": "用户列表",
+        "tags": [
+          "admin-users"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}": {
+      "get": {
+        "summary": "用户详情",
+        "tags": [
+          "admin-users"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/ban": {
+      "post": {
+        "summary": "封禁",
+        "tags": [
+          "admin-users"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/unban": {
+      "post": {
+        "summary": "解封",
+        "tags": [
+          "admin-users"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/force-logout": {
+      "post": {
+        "summary": "强制下线",
+        "tags": [
+          "admin-users"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/review": {
+      "get": {
+        "summary": "审核队列",
+        "tags": [
+          "admin-review"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/review/{id}/approve": {
+      "post": {
+        "summary": "审核通过",
+        "tags": [
+          "admin-review"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/review/{id}/reject": {
+      "post": {
+        "summary": "审核拒绝",
+        "tags": [
+          "admin-review"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/packages": {
+      "get": {
+        "summary": "技能包",
+        "tags": [
+          "admin-content"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackagesAdminResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/video-skills": {
+      "get": {
+        "summary": "视频技能配置",
+        "tags": [
+          "admin-content"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSkillsAdminResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/announcements": {
+      "get": {
+        "summary": "公告",
+        "tags": [
+          "admin-content"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnouncementsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/public-assets": {
+      "get": {
+        "summary": "公共素材",
+        "tags": [
+          "admin-content"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAssetsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/channels": {
+      "get": {
+        "summary": "通道列表",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/channels/{id}/test": {
+      "post": {
+        "summary": "连通性测试",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/endpoints": {
+      "get": {
+        "summary": "接入点",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndpointsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/endpoints/{id}/probe": {
+      "post": {
+        "summary": "版本探测",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/endpoints/bulk": {
+      "post": {
+        "summary": "批量切通道",
+        "tags": [
+          "admin-supply"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/pricing": {
+      "get": {
+        "summary": "售价",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingAdminResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/pricing/changelog": {
+      "get": {
+        "summary": "改价审计",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangelogResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/pricing/rollback": {
+      "post": {
+        "summary": "改价回滚",
+        "tags": [
+          "admin-supply"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/channels/balances": {
+      "get": {
+        "summary": "通道余额",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalancesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/bills": {
+      "get": {
+        "summary": "渠道对账",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/bills/reconcile": {
+      "post": {
+        "summary": "日终对账",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/invoices": {
+      "get": {
+        "summary": "发票审核",
+        "tags": [
+          "admin-finance"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoicesAdminResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/invoices/{id}/approve": {
+      "post": {
+        "summary": "开票通过",
+        "tags": [
+          "admin-finance"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/affiliate/partners": {
+      "get": {
+        "summary": "分销伙伴",
+        "tags": [
+          "admin-finance"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnersResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/affiliate/withdrawals/{id}/approve": {
+      "post": {
+        "summary": "提现审核",
+        "tags": [
+          "admin-finance"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reports/tasks": {
+      "get": {
+        "summary": "任务报表",
+        "tags": [
+          "admin-data"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/dashboard": {
+      "get": {
+        "summary": "数据看板",
+        "tags": [
+          "admin-data"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit": {
+      "get": {
+        "summary": "审计日志",
+        "tags": [
+          "admin-system"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/invite-codes": {
+      "get": {
+        "summary": "邀请码",
+        "tags": [
+          "admin-system"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteCodesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ledger": {
+      "get": {
+        "summary": "积分流水",
+        "tags": [
+          "admin-billing"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/endpoint-changes": {
+      "get": {
+        "summary": "改通道留痕",
+        "tags": [
+          "admin-supply"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndpointChangesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiResponse": {
+        "type": "object",
+        "description": "ApiResponse"
+      },
+      "SseResponse": {
+        "type": "object",
+        "description": "SseResponse"
+      },
+      "SmsSendRequest": {
+        "type": "object",
+        "description": "SmsSendRequest"
+      },
+      "SmsVerifyRequest": {
+        "type": "object",
+        "description": "SmsVerifyRequest"
+      },
+      "PasswordLoginRequest": {
+        "type": "object",
+        "description": "PasswordLoginRequest"
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "description": "RefreshRequest"
+      },
+      "AuthResponse": {
+        "type": "object",
+        "description": "AuthResponse"
+      },
+      "SessionListResponse": {
+        "type": "object",
+        "description": "SessionListResponse"
+      },
+      "UserResponse": {
+        "type": "object",
+        "description": "UserResponse"
+      },
+      "UpdateMeRequest": {
+        "type": "object",
+        "description": "UpdateMeRequest"
+      },
+      "BalanceResponse": {
+        "type": "object",
+        "description": "BalanceResponse"
+      },
+      "LedgerResponse": {
+        "type": "object",
+        "description": "LedgerResponse"
+      },
+      "PackagesResponse": {
+        "type": "object",
+        "description": "PackagesResponse"
+      },
+      "CreateOrderRequest": {
+        "type": "object",
+        "description": "CreateOrderRequest"
+      },
+      "OrderResponse": {
+        "type": "object",
+        "description": "OrderResponse"
+      },
+      "OrdersResponse": {
+        "type": "object",
+        "description": "OrdersResponse"
+      },
+      "CallbackRequest": {
+        "type": "object",
+        "description": "CallbackRequest"
+      },
+      "AdjustRequest": {
+        "type": "object",
+        "description": "AdjustRequest"
+      },
+      "QuoteRequest": {
+        "type": "object",
+        "description": "QuoteRequest"
+      },
+      "QuoteResponse": {
+        "type": "object",
+        "description": "QuoteResponse"
+      },
+      "TaskSubmitRequest": {
+        "type": "object",
+        "description": "TaskSubmitRequest"
+      },
+      "TaskResponse": {
+        "type": "object",
+        "description": "TaskResponse"
+      },
+      "TaskListResponse": {
+        "type": "object",
+        "description": "TaskListResponse"
+      },
+      "BatchSubmitRequest": {
+        "type": "object",
+        "description": "BatchSubmitRequest"
+      },
+      "BatchResponse": {
+        "type": "object",
+        "description": "BatchResponse"
+      },
+      "BatchListResponse": {
+        "type": "object",
+        "description": "BatchListResponse"
+      },
+      "SegmentQuoteRequest": {
+        "type": "object",
+        "description": "SegmentQuoteRequest"
+      },
+      "SegmentSubmitRequest": {
+        "type": "object",
+        "description": "SegmentSubmitRequest"
+      },
+      "UploadPolicyRequest": {
+        "type": "object",
+        "description": "UploadPolicyRequest"
+      },
+      "UploadPolicyResponse": {
+        "type": "object",
+        "description": "UploadPolicyResponse"
+      },
+      "CompleteRequest": {
+        "type": "object",
+        "description": "CompleteRequest"
+      },
+      "AssetResponse": {
+        "type": "object",
+        "description": "AssetResponse"
+      },
+      "AssetListResponse": {
+        "type": "object",
+        "description": "AssetListResponse"
+      },
+      "UpdateAssetRequest": {
+        "type": "object",
+        "description": "UpdateAssetRequest"
+      },
+      "BatchDeleteRequest": {
+        "type": "object",
+        "description": "BatchDeleteRequest"
+      },
+      "GroupsResponse": {
+        "type": "object",
+        "description": "GroupsResponse"
+      },
+      "CreateGroupRequest": {
+        "type": "object",
+        "description": "CreateGroupRequest"
+      },
+      "FeedResponse": {
+        "type": "object",
+        "description": "FeedResponse"
+      },
+      "FeedItemResponse": {
+        "type": "object",
+        "description": "FeedItemResponse"
+      },
+      "RoutesResponse": {
+        "type": "object",
+        "description": "RoutesResponse"
+      },
+      "PricingResponse": {
+        "type": "object",
+        "description": "PricingResponse"
+      },
+      "ImageSkillsResponse": {
+        "type": "object",
+        "description": "ImageSkillsResponse"
+      },
+      "VideoSkillsResponse": {
+        "type": "object",
+        "description": "VideoSkillsResponse"
+      },
+      "TranscribeRequest": {
+        "type": "object",
+        "description": "TranscribeRequest"
+      },
+      "TranscribeResponse": {
+        "type": "object",
+        "description": "TranscribeResponse"
+      },
+      "ChatRequest": {
+        "type": "object",
+        "description": "ChatRequest"
+      },
+      "AgentSessionsResponse": {
+        "type": "object",
+        "description": "AgentSessionsResponse"
+      },
+      "CreateAgentSessionRequest": {
+        "type": "object",
+        "description": "CreateAgentSessionRequest"
+      },
+      "AgentMessagesResponse": {
+        "type": "object",
+        "description": "AgentMessagesResponse"
+      },
+      "AgentSkillsResponse": {
+        "type": "object",
+        "description": "AgentSkillsResponse"
+      },
+      "CloudRuntimeRequest": {
+        "type": "object",
+        "description": "CloudRuntimeRequest"
+      },
+      "CloudRuntimeResponse": {
+        "type": "object",
+        "description": "CloudRuntimeResponse"
+      },
+      "DesktopSessionRequest": {
+        "type": "object",
+        "description": "DesktopSessionRequest"
+      },
+      "DesktopSessionResponse": {
+        "type": "object",
+        "description": "DesktopSessionResponse"
+      },
+      "CanvasListResponse": {
+        "type": "object",
+        "description": "CanvasListResponse"
+      },
+      "CreateCanvasRequest": {
+        "type": "object",
+        "description": "CreateCanvasRequest"
+      },
+      "CanvasResponse": {
+        "type": "object",
+        "description": "CanvasResponse"
+      },
+      "RenameCanvasRequest": {
+        "type": "object",
+        "description": "RenameCanvasRequest"
+      },
+      "GraphRequest": {
+        "type": "object",
+        "description": "GraphRequest"
+      },
+      "VersionsResponse": {
+        "type": "object",
+        "description": "VersionsResponse"
+      },
+      "CanvasTemplatesResponse": {
+        "type": "object",
+        "description": "CanvasTemplatesResponse"
+      },
+      "AvatarsResponse": {
+        "type": "object",
+        "description": "AvatarsResponse"
+      },
+      "CreateAvatarRequest": {
+        "type": "object",
+        "description": "CreateAvatarRequest"
+      },
+      "VoicesResponse": {
+        "type": "object",
+        "description": "VoicesResponse"
+      },
+      "CloneVoiceRequest": {
+        "type": "object",
+        "description": "CloneVoiceRequest"
+      },
+      "SlotsResponse": {
+        "type": "object",
+        "description": "SlotsResponse"
+      },
+      "TtsRequest": {
+        "type": "object",
+        "description": "TtsRequest"
+      },
+      "DhRequest": {
+        "type": "object",
+        "description": "DhRequest"
+      },
+      "AuthzResponse": {
+        "type": "object",
+        "description": "AuthzResponse"
+      },
+      "SceneTemplatesResponse": {
+        "type": "object",
+        "description": "SceneTemplatesResponse"
+      },
+      "EffectJobRequest": {
+        "type": "object",
+        "description": "EffectJobRequest"
+      },
+      "RefineRequest": {
+        "type": "object",
+        "description": "RefineRequest"
+      },
+      "MaterialsResponse": {
+        "type": "object",
+        "description": "MaterialsResponse"
+      },
+      "CreateMaterialRequest": {
+        "type": "object",
+        "description": "CreateMaterialRequest"
+      },
+      "UpdateMaterialRequest": {
+        "type": "object",
+        "description": "UpdateMaterialRequest"
+      },
+      "ExportRequest": {
+        "type": "object",
+        "description": "ExportRequest"
+      },
+      "ScriptTemplatesResponse": {
+        "type": "object",
+        "description": "ScriptTemplatesResponse"
+      },
+      "FactoryVideoRequest": {
+        "type": "object",
+        "description": "FactoryVideoRequest"
+      },
+      "DepthCloneRequest": {
+        "type": "object",
+        "description": "DepthCloneRequest"
+      },
+      "EcomSetRequest": {
+        "type": "object",
+        "description": "EcomSetRequest"
+      },
+      "RemixRequest": {
+        "type": "object",
+        "description": "RemixRequest"
+      },
+      "EnhanceRequest": {
+        "type": "object",
+        "description": "EnhanceRequest"
+      },
+      "EraseRequest": {
+        "type": "object",
+        "description": "EraseRequest"
+      },
+      "DecensorRequest": {
+        "type": "object",
+        "description": "DecensorRequest"
+      },
+      "CreatorRequest": {
+        "type": "object",
+        "description": "CreatorRequest"
+      },
+      "InvoicesResponse": {
+        "type": "object",
+        "description": "InvoicesResponse"
+      },
+      "CreateInvoiceRequest": {
+        "type": "object",
+        "description": "CreateInvoiceRequest"
+      },
+      "AffiliateOverviewResponse": {
+        "type": "object",
+        "description": "AffiliateOverviewResponse"
+      },
+      "SettlementsResponse": {
+        "type": "object",
+        "description": "SettlementsResponse"
+      },
+      "WithdrawRequest": {
+        "type": "object",
+        "description": "WithdrawRequest"
+      },
+      "AdminUsersResponse": {
+        "type": "object",
+        "description": "AdminUsersResponse"
+      },
+      "AdminUserResponse": {
+        "type": "object",
+        "description": "AdminUserResponse"
+      },
+      "RejectRequest": {
+        "type": "object",
+        "description": "RejectRequest"
+      },
+      "PackagesAdminResponse": {
+        "type": "object",
+        "description": "PackagesAdminResponse"
+      },
+      "VideoSkillsAdminResponse": {
+        "type": "object",
+        "description": "VideoSkillsAdminResponse"
+      },
+      "AnnouncementsResponse": {
+        "type": "object",
+        "description": "AnnouncementsResponse"
+      },
+      "PublicAssetsResponse": {
+        "type": "object",
+        "description": "PublicAssetsResponse"
+      },
+      "ChannelsResponse": {
+        "type": "object",
+        "description": "ChannelsResponse"
+      },
+      "EndpointsResponse": {
+        "type": "object",
+        "description": "EndpointsResponse"
+      },
+      "BulkRequest": {
+        "type": "object",
+        "description": "BulkRequest"
+      },
+      "PricingAdminResponse": {
+        "type": "object",
+        "description": "PricingAdminResponse"
+      },
+      "ChangelogResponse": {
+        "type": "object",
+        "description": "ChangelogResponse"
+      },
+      "RollbackRequest": {
+        "type": "object",
+        "description": "RollbackRequest"
+      },
+      "BalancesResponse": {
+        "type": "object",
+        "description": "BalancesResponse"
+      },
+      "BillsResponse": {
+        "type": "object",
+        "description": "BillsResponse"
+      },
+      "InvoicesAdminResponse": {
+        "type": "object",
+        "description": "InvoicesAdminResponse"
+      },
+      "PartnersResponse": {
+        "type": "object",
+        "description": "PartnersResponse"
+      },
+      "ReportsResponse": {
+        "type": "object",
+        "description": "ReportsResponse"
+      },
+      "DashboardResponse": {
+        "type": "object",
+        "description": "DashboardResponse"
+      },
+      "AuditResponse": {
+        "type": "object",
+        "description": "AuditResponse"
+      },
+      "InviteCodesResponse": {
+        "type": "object",
+        "description": "InviteCodesResponse"
+      },
+      "EndpointChangesResponse": {
+        "type": "object",
+        "description": "EndpointChangesResponse"
+      },
+      "ReviewResponse": {
+        "type": "object",
+        "description": "ReviewResponse"
+      }
+    }
+  }
 }

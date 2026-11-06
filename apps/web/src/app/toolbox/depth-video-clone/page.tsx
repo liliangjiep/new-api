@@ -337,9 +337,9 @@ export default function DepthVideoClonePage() {
   const [spec, setSpec] = useState("9:16 · 480P · 20s");
   const [tab, setTab] = useState("examples");
   const [busy, setBusy] = useState(false);
-  const [modeOpen, setModeOpen] = useState(true);
+  const [modeOpen, setModeOpen] = useState(false);
   const [guideStep, setGuideStep] = useState(0);
-  const [guideOpen, setGuideOpen] = useState(true);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [videoName, setVideoName] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoThumb, setVideoThumb] = useState<string | null>(null);

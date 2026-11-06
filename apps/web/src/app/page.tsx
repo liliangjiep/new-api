@@ -531,7 +531,8 @@ export default function HomePage() {
     else push({ tone: "neutral", title: dir > 0 ? "向右滑动（演示）" : "向左滑动（演示）" });
   };
   const [prompt, setPrompt] = useState("");
-  const [mode] = useState<string>("agent");
+  const [mode, setMode] = useState<string>("agent");
+  const [modeOpen, setModeOpen] = useState(false);
   const [tab, setTab] = useState<(typeof DISCOVER_TABS)[number]>("发现");
   const editorRef = useRef<HTMLDivElement>(null);
 
@@ -625,17 +626,28 @@ export default function HomePage() {
 
             {/* —— Composer + 常用工具 —— */}
             <div className="home-composer-tool-group relative z-[1] flex w-full max-w-[840px] flex-col gap-12">
-              <div className="home-header-composer-wrap relative z-[2] box-border flex w-full min-w-0 shrink-0 flex-col border border-line bg-[var(--color-home-composer-bg)] p-3 [box-shadow:var(--shadow-home-composer)] [&_.composer-add-button:hover]:bg-action [&_.speech-input-controls-microphone:hover]:bg-action rounded-[20px]">
-                {/* 输入区 */}
-                <div className="home-composer-content flex min-h-0 min-w-0 flex-auto flex-col">
-                  <div
-                    data-home-editor-root="true"
-                    className="home-composer-editor relative z-[1] min-h-0 min-w-0 flex-1 overflow-clip"
-                  >
-                    <div className="home-composer-input-viewport h-full">
+              <div className="home-header-composer-wrap home-header-composer relative z-[2] box-border flex w-full min-w-0 shrink-0 flex-col justify-between gap-0 rounded-[20px] border-2 border-[var(--color-home-composer-border)] bg-[var(--color-home-composer-bg)] p-2 [box-shadow:var(--shadow-home-composer)] transition-[box-shadow,border-color,background-color,margin] duration-200 ease-out motion-reduce:transition-none">
+                <div className="home-composer-input-row flex min-h-0 flex-1 items-start [&>.composer-reference-rail-desktop]:!h-[var(--home-composer-editor-height)]">
+                    <div className="composer-reference-rail-desktop relative z-20 flex h-[108px] w-[104px] min-h-0 shrink-0 transform-gpu flex-col items-center justify-center transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform [backface-visibility:hidden]">
+                      <div className="composer-reference-upload-group relative z-10 flex shrink-0 origin-center">
+                        <div className="composer-reference-upload-attachment relative h-16 w-14 origin-center">
+                          <div className="composer-reference-upload-slot relative left-0 top-0 h-16 w-14 origin-center -rotate-[8deg] shadow-[-4px_8px_20px_rgba(0,0,0,0.04)] transition-transform duration-200 ease-in-out hover:rotate-0">
+                            <button type="button" aria-label="添加参考素材" onClick={() => requireAuth("/assets")} className="composer-reference-upload-button group relative flex h-16 w-14 shrink-0 transform-none origin-center items-center justify-center overflow-hidden rounded-[10px] bg-surface text-[#222529] shadow-none hover:transform-none disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:rotate-[-8deg]">
+                              <span aria-hidden="true" className="absolute inset-0 rounded-[inherit] bg-[linear-gradient(136.6deg,#d7ecff_20.9%,#67e6ff_98.9%)] opacity-30 transition-opacity duration-200 group-hover:opacity-40" />
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden data-slot="icon" className="relative z-[1] h-[18px] w-[18px] stroke-[2] origin-center"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="home-composer-editor-wrap relative min-w-0 flex-1 px-2 py-1">
+                      <div
+                        data-home-editor-root="true"
+                        className="home-composer-editor relative z-0 flex h-[var(--home-composer-editor-height)] min-h-0 min-w-0 flex-col overflow-hidden"
+                      >
                       <div className="composer-prompt-input relative flex min-h-0 flex-auto flex-col home-composer-input-field min-h-0 w-full flex-1">
                         <div className="mention-composer relative flex flex-auto flex-col min-h-7 min-w-0">
-                          <div className="mention-composer-shell relative flex min-h-0 flex-auto flex-col min-h-[64px] max-h-[234px] rounded-none border-0 bg-transparent shadow-none cursor-text">
+                          <div className="mention-composer-shell relative flex min-h-0 flex-auto flex-col min-h-[var(--home-composer-input-min-height)] max-h-[var(--home-composer-editor-height)] rounded-none border-0 bg-transparent shadow-none cursor-text">
                             <div
                               data-mention-placeholder="true"
                               className="mention-composer-placeholder pointer-events-none absolute z-[1] text-[14px] font-normal leading-[26px] text-[#00000040]"
@@ -657,6 +669,7 @@ export default function HomePage() {
                         </div>
                       </div>
                     </div>
+                    </div>
                   </div>
 
                   {/* 工具条 */}
@@ -674,29 +687,59 @@ export default function HomePage() {
                       <div className="speech-input-toolbar flex min-h-[var(--toolbar-size,32px)] w-full min-w-0 shrink-0 flex-nowrap items-end gap-2 max-sm:min-h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:min-h-[var(--toolbar-size,44px)]">
                         <div className="speech-input-toolbar-main relative min-h-[var(--toolbar-size,32px)] min-w-0 flex-1 max-sm:min-h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:min-h-[var(--toolbar-size,44px)]">
                           <div className="speech-input-toolbar-details flex min-h-[var(--toolbar-size,32px)] min-w-0 flex-wrap items-center gap-1.5 pr-10 max-sm:min-h-[var(--toolbar-size,44px)] max-sm:pr-14 [@media(pointer:coarse)]:min-h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:pr-14 transition-[opacity,transform,visibility] duration-200 ease-out motion-reduce:transition-none visible translate-y-0 opacity-100 delay-0">
-                            <button
-                              type="button"
-                              aria-label="添加素材"
-                              onClick={() => requireAuth("/assets")}
-                              className="composer-add-button flex h-[var(--toolbar-size,32px)] w-[var(--toolbar-size,32px)] shrink-0 items-center justify-center rounded-full bg-transparent text-foreground transition-colors hover:bg-muted"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                strokeWidth={1.5}
-                                stroke="currentColor"
-                                aria-hidden
-                                data-slot="icon"
-                                className="h-4 w-4"
+                            <div className="home-mode-selector home-style-dropdown relative inline-flex min-h-[var(--toolbar-size,36px)] items-center">
+                              <button
+                                type="button"
+                                role="combobox"
+                                aria-haspopup="listbox"
+                                aria-controls="home-mode-listbox"
+                                aria-expanded={modeOpen}
+                                aria-label="生成模式"
+                                onClick={() => setModeOpen((v) => !v)}
+                                className="home-mode-combobox home-style-dropdown-combobox inline-flex h-[var(--toolbar-size,36px)] shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full bg-transparent px-2 text-[length:var(--toolbar-font-size,14px)] text-foreground transition-colors hover:bg-action aria-[expanded=true]:bg-action disabled:cursor-not-allowed disabled:opacity-45"
                               >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M12 4.5v15m7.5-7.5h-15"
-                                />
-                              </svg>
-                            </button>
+                                <span className="home-style-dropdown-value inline-flex min-w-0 items-center gap-1.5">
+                                  <span className="home-style-dropdown-value-icon flex h-[var(--toolbar-icon-size,20px)] w-[var(--toolbar-icon-size,20px)] shrink-0 items-center justify-center [&>svg]:h-full [&>svg]:w-full">
+                                    <ModeIcon kind={MODES.find((m) => m.value === mode)?.icon ?? "sparkle"} />
+                                  </span>
+                                  <span className="home-style-dropdown-value-label truncate">
+                                    {MODES.find((m) => m.value === mode)?.label}
+                                  </span>
+                                </span>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden data-slot="icon" className="home-style-dropdown-chevron h-[var(--toolbar-font-size,14px)] w-[var(--toolbar-font-size,14px)] shrink-0 text-foreground transition-transform duration-150">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                                </svg>
+                              </button>
+                              {modeOpen ? (
+                                <div id="home-mode-listbox" role="listbox" aria-label="生成模式" className="home-style-dropdown-popover absolute left-0 top-full z-50 mt-1 min-w-[140px] overflow-hidden rounded-xl border border-line bg-surface shadow-[0_18px_56px_rgba(15,23,42,0.18)]">
+                                  {MODES.map((m) => {
+                                    const on = m.value === mode;
+                                    return (
+                                      <button
+                                        key={m.value}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={on}
+                                        onClick={() => {
+                                          setMode(m.value);
+                                          setModeOpen(false);
+                                        }}
+                                        className="home-style-dropdown-option flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-action data-[selected=true]:bg-action"
+                                        data-selected={on}
+                                      >
+                                        <span className="home-style-dropdown-value-icon flex h-5 w-5 shrink-0 items-center justify-center">
+                                          <ModeIcon kind={m.icon} />
+                                        </span>
+                                        <span className="min-w-0 flex-1 truncate">{m.label}</span>
+                                        {on ? (
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden className="h-3.5 w-3.5 shrink-0 text-accent-deep"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" /></svg>
+                                        ) : null}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
 
                       <div className="speech-input-toolbar-slot pointer-events-none absolute inset-x-0 bottom-0 flex h-[var(--toolbar-size,32px)] min-w-0 items-center max-sm:h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:h-[var(--toolbar-size,44px)]">
@@ -766,7 +809,6 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-          </div>
 
               {/* 常用工具 */}
               <section

@@ -3,14 +3,42 @@ server:
 spring:
   application:
     name: xin-ai-api
-  # TODO(API): 本地 PG/Redis 地址按 docker compose 补齐
-  datasource:
-    url: jdbc:postgresql://localhost:5432/xinai
-    username: xinai
-    password: xinai
+  # 行内注释3：全局 snake_case 命名策略 —— 接口文档与前端契约（apps/web/src/lib/contract.ts）
+  # 统一使用下划线字段名（model_key / quote_fingerprint / asset_id ...），
+  # 这里开启后，record 的 camelCase 属性会自动映射为 snake_case，
+  # 显式标注 @JsonProperty 的字段（request_id / trace_id / page_size）不受影响。
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: always
+  # 行内注释1：本期存储层为内存实现（MemStore），先关闭数据源 / Flyway / MyBatis-Plus 自动装配，
+  # 待 PostgreSQL 环境就绪后再放开（见 docs/new-ai-后端接口实现状态-V1.md 的 TODO 清单）。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration
+  flyway:
+    enabled: false
+  data:
+    redis:
+      repositories:
+        enabled: false
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 3000ms
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+xin:
+  jwt:
+    # 行内注释2：生产环境务必用环境变量 XIN_JWT_SECRET 覆盖。
+    secret: ${XIN_JWT_SECRET:xin-ai-dev-secret-change-me}
+    access-ttl-seconds: 900
+    refresh-ttl-seconds: 2592000
 logging:
   level:
-    com.xin.ai: DEBUG
+    com.xin.ai: INFO

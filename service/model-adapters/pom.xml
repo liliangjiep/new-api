@@ -15,5 +15,7 @@
     <dependency><groupId>com.xin.ai</groupId><artifactId>xin-ai-common</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.xin.ai</groupId><artifactId>xin-ai-domain</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>io.github.resilience4j</groupId><artifactId>resilience4j-circuitbreaker</artifactId><version>${resilience4j.version}</version></dependency>
+    <!-- 行内注释1：ToAPI 适配器需要 Jackson 做请求/响应序列化。 -->
+    <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
   </dependencies>
 </project>

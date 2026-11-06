@@ -1,0 +1,451 @@
+-- V2 业务表：用户 / 会话 / 积分 / 充值 / 资产 / 定价 / 订单 / 画布 / Agent / 数字人 / 石材 / 发现 / 后台
+-- 行内注释1：本期运行时用内存实现（MemStore），本脚本是 PostgreSQL 环境就绪后的落地表结构。
+-- 行内注释2：字段与 service/domain 的 Rows 键名一一对应，切库时无需改业务代码。
+-- 行内注释3：point_ledger 只追加不修改，用 append-only 约束表达「流水不可变」。
+
+-- ---------------- 用户与会话 ----------------
+
+CREATE TABLE IF NOT EXISTS users (
+  id VARCHAR(32) PRIMARY KEY,
+  phone VARCHAR(20) UNIQUE,
+  email VARCHAR(128),
+  nickname VARCHAR(32) NOT NULL DEFAULT '',
+  company VARCHAR(128) NOT NULL DEFAULT '',
+  bio VARCHAR(256) NOT NULL DEFAULT '',
+  avatar_url VARCHAR(512) NOT NULL DEFAULT '',
+  avatar_asset_id VARCHAR(32),
+  password_hash VARCHAR(128) NOT NULL DEFAULT '',
+  role VARCHAR(16) NOT NULL DEFAULT 'USER',
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  login_version INT NOT NULL DEFAULT 0,
+  balance INT NOT NULL DEFAULT 0,
+  frozen INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  device VARCHAR(64) NOT NULL DEFAULT 'Web',
+  ip VARCHAR(64) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  token VARCHAR(128) NOT NULL UNIQUE,
+  revoked BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expire_at TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_user ON refresh_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS sms_codes (
+  id VARCHAR(32) PRIMARY KEY,
+  phone VARCHAR(20) NOT NULL,
+  code VARCHAR(8) NOT NULL,
+  used BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expire_at TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sms_phone ON sms_codes(phone);
+
+-- ---------------- 积分与报价 ----------------
+
+CREATE TABLE IF NOT EXISTS quotes (
+  id VARCHAR(128) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  model_key VARCHAR(64) NOT NULL,
+  spec VARCHAR(64) NOT NULL DEFAULT '',
+  count INT NOT NULL DEFAULT 1,
+  points INT NOT NULL DEFAULT 0,
+  params TEXT DEFAULT '{}',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expire_at TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_quotes_user ON quotes(user_id);
+
+-- 行内注释4：流水表仅追加，业务层不提供 update/delete。
+CREATE TABLE IF NOT EXISTS point_ledger (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  type VARCHAR(16) NOT NULL,
+  amount INT NOT NULL DEFAULT 0,
+  balance INT NOT NULL DEFAULT 0,
+  note TEXT DEFAULT '',
+  task_id VARCHAR(32),
+  order_no VARCHAR(32),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_user_type ON point_ledger(user_id, type);
+
+-- ---------------- 充值与订单 ----------------
+
+CREATE TABLE IF NOT EXISTS recharge_packages (
+  id VARCHAR(32) PRIMARY KEY,
+  code VARCHAR(32) NOT NULL UNIQUE,
+  name VARCHAR(32) NOT NULL,
+  amount INT NOT NULL,
+  credits INT NOT NULL,
+  bonus_rate DECIMAL(6,4) NOT NULL DEFAULT 0,
+  audience VARCHAR(64) NOT NULL DEFAULT '',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS recharge_orders (
+  id VARCHAR(32) PRIMARY KEY,
+  no VARCHAR(32) NOT NULL UNIQUE,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  package_code VARCHAR(32) NOT NULL,
+  package_name VARCHAR(64) NOT NULL DEFAULT '',
+  amount INT NOT NULL,
+  credits INT NOT NULL,
+  bonus INT NOT NULL DEFAULT 0,
+  pay_method VARCHAR(32) NOT NULL DEFAULT '微信支付',
+  paid_channel VARCHAR(32) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  paid_at TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_orders_user ON recharge_orders(user_id);
+
+-- ---------------- 资产 ----------------
+
+CREATE TABLE IF NOT EXISTS assets (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  name VARCHAR(256) NOT NULL,
+  kind VARCHAR(16) NOT NULL,
+  size BIGINT NOT NULL DEFAULT 0,
+  content_type VARCHAR(128) NOT NULL DEFAULT '',
+  etag VARCHAR(128) NOT NULL DEFAULT '',
+  "group" VARCHAR(64) NOT NULL DEFAULT '',
+  tags TEXT DEFAULT '[]',
+  source VARCHAR(16) NOT NULL DEFAULT 'upload',
+  thumb VARCHAR(512) NOT NULL DEFAULT '',
+  url VARCHAR(512) NOT NULL DEFAULT '',
+  duration INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_assets_user ON assets(user_id, kind, source);
+
+CREATE TABLE IF NOT EXISTS asset_groups (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  name VARCHAR(64) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS upload_policies (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  kind VARCHAR(16) NOT NULL,
+  "group" VARCHAR(64) NOT NULL DEFAULT '',
+  filename VARCHAR(256) NOT NULL DEFAULT '',
+  content_type VARCHAR(128) NOT NULL DEFAULT '',
+  size BIGINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expire_at TIMESTAMP NOT NULL
+);
+
+-- ---------------- 定价与审核 ----------------
+
+CREATE TABLE IF NOT EXISTS ability_pricing (
+  id VARCHAR(128) PRIMARY KEY,
+  model_key VARCHAR(64) NOT NULL,
+  spec VARCHAR(64) NOT NULL,
+  points INT NOT NULL,
+  cost DECIMAL(10,4) NOT NULL DEFAULT 0,
+  updated_by VARCHAR(64) NOT NULL DEFAULT '',
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (model_key, spec)
+);
+
+CREATE TABLE IF NOT EXISTS pricing_change_log (
+  id VARCHAR(32) PRIMARY KEY,
+  model_key VARCHAR(64) NOT NULL,
+  spec VARCHAR(64) NOT NULL,
+  points_before INT NOT NULL,
+  points_after INT NOT NULL,
+  reason TEXT DEFAULT '',
+  operator VARCHAR(64) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS review_queue (
+  id VARCHAR(32) PRIMARY KEY,
+  title VARCHAR(256) NOT NULL DEFAULT '',
+  "user" VARCHAR(64) NOT NULL DEFAULT '',
+  thumb VARCHAR(512) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  reason TEXT DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ---------------- 画布 / Agent / 数字人 / 石材 / 发现 ----------------
+
+CREATE TABLE IF NOT EXISTS canvases (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  title VARCHAR(128) NOT NULL DEFAULT '未命名画布',
+  version INT NOT NULL DEFAULT 0,
+  nodes TEXT DEFAULT '[]',
+  edges TEXT DEFAULT '[]',
+  share_url VARCHAR(512) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS canvas_versions (
+  id VARCHAR(32) PRIMARY KEY,
+  canvas_id VARCHAR(32) NOT NULL REFERENCES canvases(id),
+  user_id VARCHAR(32) NOT NULL,
+  version INT NOT NULL,
+  nodes TEXT DEFAULT '[]',
+  edges TEXT DEFAULT '[]',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS agent_sessions (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  title VARCHAR(128) NOT NULL DEFAULT '新会话',
+  skill VARCHAR(32) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS agent_messages (
+  id VARCHAR(32) PRIMARY KEY,
+  session_id VARCHAR(32) NOT NULL REFERENCES agent_sessions(id),
+  user_id VARCHAR(32) NOT NULL,
+  role VARCHAR(16) NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  seq INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS avatars (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  asset_id VARCHAR(32) NOT NULL,
+  name VARCHAR(128) NOT NULL DEFAULT '未命名形象',
+  url VARCHAR(512) NOT NULL DEFAULT '',
+  standardized BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS voices (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  name VARCHAR(128) NOT NULL DEFAULT '',
+  source VARCHAR(16) NOT NULL DEFAULT 'clone',
+  audio_asset_ids TEXT DEFAULT '[]',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS voice_slots (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  voice_id VARCHAR(32) NOT NULL,
+  name VARCHAR(128) NOT NULL DEFAULT '',
+  "index" INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS authorizations (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  type VARCHAR(16) NOT NULL DEFAULT 'portrait',
+  subject VARCHAR(128) NOT NULL DEFAULT '',
+  file_url VARCHAR(512) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stone_materials (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  asset_id VARCHAR(32) NOT NULL,
+  name VARCHAR(128) NOT NULL DEFAULT '',
+  tags TEXT DEFAULT '[]',
+  attrs TEXT DEFAULT '{}',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stone_refine_queue (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  job_id VARCHAR(32) NOT NULL,
+  note TEXT DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS discover_items (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL,
+  title VARCHAR(256) NOT NULL DEFAULT '',
+  cover_url VARCHAR(512) NOT NULL DEFAULT '',
+  capability VARCHAR(32) NOT NULL DEFAULT 'image',
+  points INT NOT NULL DEFAULT 0,
+  tags TEXT DEFAULT '[]',
+  tool_href VARCHAR(256) NOT NULL DEFAULT '',
+  params_snapshot TEXT DEFAULT '{}',
+  likes INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_discover_cap ON discover_items(capability, created_at DESC);
+
+-- ---------------- 发票 / 分销 / 后台 ----------------
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  title_type VARCHAR(16) NOT NULL DEFAULT '个人',
+  title VARCHAR(128) NOT NULL,
+  tax_no VARCHAR(32) NOT NULL DEFAULT '',
+  amount DECIMAL(12,2) NOT NULL,
+  order_nos TEXT DEFAULT '[]',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  invoice_no VARCHAR(64) NOT NULL DEFAULT '',
+  reason TEXT DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS affiliate_partners (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  rate INT NOT NULL DEFAULT 10,
+  status VARCHAR(16) NOT NULL DEFAULT '合作中',
+  pending_amount INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS affiliate_commissions (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL,
+  amount INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS affiliate_settlements (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL,
+  period VARCHAR(32) NOT NULL DEFAULT '',
+  amount INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT '待打款',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS affiliate_withdrawals (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL,
+  amount INT NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id VARCHAR(32) PRIMARY KEY,
+  operator VARCHAR(64) NOT NULL DEFAULT 'system',
+  action VARCHAR(64) NOT NULL,
+  target VARCHAR(128) NOT NULL DEFAULT '',
+  diff TEXT DEFAULT '{}',
+  reason TEXT DEFAULT '',
+  trace_id VARCHAR(64) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS announcements (
+  id VARCHAR(32) PRIMARY KEY,
+  title VARCHAR(256) NOT NULL,
+  body TEXT DEFAULT '',
+  pinned BOOLEAN NOT NULL DEFAULT FALSE,
+  "range" VARCHAR(32) NOT NULL DEFAULT '长期',
+  status VARCHAR(16) NOT NULL DEFAULT 'published',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public_materials (
+  id VARCHAR(32) PRIMARY KEY,
+  name VARCHAR(256) NOT NULL DEFAULT '',
+  scope VARCHAR(32) NOT NULL DEFAULT '全员',
+  thumb VARCHAR(512) NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS skill_packages (
+  id VARCHAR(32) PRIMARY KEY,
+  label VARCHAR(128) NOT NULL DEFAULT '',
+  description TEXT DEFAULT '',
+  prompt_template TEXT DEFAULT '',
+  version VARCHAR(16) NOT NULL DEFAULT 'v1.0',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS video_skills (
+  id VARCHAR(32) PRIMARY KEY,
+  key VARCHAR(64) NOT NULL UNIQUE,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  option_groups TEXT DEFAULT '{}',
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS endpoint_changes (
+  id VARCHAR(32) PRIMARY KEY,
+  model_key VARCHAR(64) NOT NULL,
+  from_channel VARCHAR(32) NOT NULL DEFAULT '',
+  to_channel VARCHAR(32) NOT NULL DEFAULT '',
+  operator VARCHAR(64) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS invite_codes (
+  code VARCHAR(32) PRIMARY KEY,
+  used BOOLEAN NOT NULL DEFAULT FALSE,
+  used_by VARCHAR(32) NOT NULL DEFAULT '',
+  created_by VARCHAR(64) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ---------------- 任务补充字段 ----------------
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS spec VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS title VARCHAR(256) NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS quote_fingerprint VARCHAR(128) NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS upstream_task_id VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS fail_reason TEXT DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS usage_record TEXT DEFAULT '{}';
+
+CREATE TABLE IF NOT EXISTS task_batches (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL REFERENCES users(id),
+  item_count INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'running',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS task_batch_items (
+  id VARCHAR(32) PRIMARY KEY,
+  batch_id VARCHAR(32) NOT NULL REFERENCES task_batches(id),
+  user_id VARCHAR(32) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ecommerce_set_items (
+  id VARCHAR(32) PRIMARY KEY,
+  user_id VARCHAR(32) NOT NULL,
+  product_asset_ids TEXT DEFAULT '[]',
+  lang VARCHAR(16) NOT NULL DEFAULT '',
+  ratio VARCHAR(16) NOT NULL DEFAULT '',
+  model VARCHAR(64) NOT NULL DEFAULT '',
+  resolution VARCHAR(16) NOT NULL DEFAULT '',
+  format VARCHAR(16) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

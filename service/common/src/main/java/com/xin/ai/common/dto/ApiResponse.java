@@ -1,23 +1,17 @@
 package com.xin.ai.common.dto;
 
-import java.util.List;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * M2-02 统一响应包装（与前端 api.ts ApiResponse 同构）。
- * 行内注释1：record 自带不可变语义，适合响应 DTO，避免 setter 污染。
- * 行内注释2：requestId 由过滤器从 MDC 注入，全链路追踪。
- * TODO(API): springdoc 导出后 openapi.json 即契约真相源。
+ * 统一响应包装（与前端 apps/web/src/lib/api.ts 的 ApiResponse 同构）。
+ * 行内注释1：JSON 字段名为 request_id（前端 read 返回 payload.data）。
+ * 行内注释2：record 不可变，适合响应 DTO。
  */
-public record ApiResponse<T>(T data, String requestId) {
-    // 行内注释3：成功工厂方法，调用方只需关心 data。
+public record ApiResponse<T>(
+        T data,
+        @JsonProperty("request_id") String requestId) {
+
     public static <T> ApiResponse<T> ok(T data, String requestId) {
         return new ApiResponse<>(data, requestId);
     }
-}
-
-/**
- * 行内注释4：分页包装，与前端 Paginated 同构。
- */
-record PageResult<T>(List<T> data, Pagination pagination) {
-    record Pagination(int page, int pageSize, long total) {}
 }

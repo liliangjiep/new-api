@@ -20,10 +20,17 @@ public class BizException extends RuntimeException {
     }
 
     // 行内注释4：带 details 的构造，用于需要前端展示差异量的场景。
+    // 行内注释5：不能用 Map.copyOf —— 它拒绝 null value，而 details 里常有 null（如未填的 spec）。
     public BizException(ErrorCode errorCode, Map<String, Object> details) {
         super(errorCode.message());
         this.errorCode = errorCode;
-        this.details = details == null ? Map.of() : Map.copyOf(details);
+        this.details = details == null
+                ? Map.of()
+                : details.entrySet().stream()
+                        .filter(e -> e.getValue() != null)
+                        .collect(java.util.stream.Collectors.toMap(
+                                Map.Entry::getKey, Map.Entry::getValue,
+                                (a, b) -> a, java.util.LinkedHashMap::new));
     }
 
     public ErrorCode getErrorCode() { return errorCode; }

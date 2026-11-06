@@ -32,6 +32,9 @@
     <maven.compiler.source>17</maven.compiler.source>
     <maven.compiler.target>17</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- 行内注释4：必须开启 -parameters —— 否则 Spring 无法推断 @PathVariable / @RequestParam 的参数名，
+         运行期会抛 "Name for argument of type ... not specified"。 -->
+    <maven.compiler.parameters>true</maven.compiler.parameters>
     <spring-boot.version>3.5.0</spring-boot.version>
     <mybatis-plus.version>3.5.7</mybatis-plus.version>
     <redisson.version>3.36.0</redisson.version>
@@ -74,6 +77,9 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
           <version>3.13.0</version>
+          <configuration>
+            <parameters>true</parameters>
+          </configuration>
         </plugin>
       </plugins>
     </pluginManagement>

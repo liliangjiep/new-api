@@ -487,6 +487,37 @@ export function WorkspaceRail({
                   </svg>
                 </div>
               </Link>
+              {/* 行内注释4：任务中心入口 —— GET /tasks 在此前没有任何 UI 入口，
+                             用户看不到自己的生成记录，也无法取消/重试任务。 */}
+              <Link
+                key="tasks"
+                href="/tasks"
+                aria-label="任务"
+                aria-current={pathname === "/tasks" ? "page" : undefined}
+                className={`workspace-sidebar-item group mb-4 flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-xl bg-transparent p-0 text-center transition-colors duration-200 hover:bg-interaction hover:text-[#0f1419] aria-[current=page]:bg-interaction aria-[expanded=true]:bg-interaction ${
+                  pathname === "/tasks" ? "text-[#0f1419]" : "text-foreground"
+                }`}
+                onMouseEnter={() => onPanelHover?.(null)}
+              >
+                <div className="workspace-sidebar-item-icon flex h-[22px] w-[22px] shrink-0 items-center justify-center text-foreground transition-colors duration-200 group-hover:text-[#111111] group-aria-[current=page]:text-[#111111]">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.25}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden
+                    className={NAV_ICON_CLASS}
+                  >
+                    <circle cx="12" cy="12" r="8" />
+                    <path d="M12 8v4l2.5 2" />
+                  </svg>
+                </div>
+              </Link>
             </div>
           </nav>
         </div>

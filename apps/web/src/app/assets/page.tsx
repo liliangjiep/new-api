@@ -10,9 +10,10 @@ import {
   deleteAsset,
   batchDeleteAssets,
   updateAsset,
+  createAssetExport,
   type AssetRecord,
 } from "@/lib/backend/assets";
-import { ApiError } from "@/lib/api";
+import { ApiError, getToken } from "@/lib/api";
 import { Drawer, Modal } from "@/components/ui/overlays";
 import { Input, Button, Select } from "@/components/ui/primitives";
 import { Badge } from "@/components/ui/surfaces";
@@ -138,12 +139,38 @@ export default function AssetsPage() {
     }
   };
 
-  const downloadSelected = () => {
+  const downloadSelected = async () => {
     if (selected.size === 0) {
       push({ tone: "warning", title: "请先勾选素材" });
       return;
     }
-    push({ tone: "success", title: "打包下载已开始", description: `${selected.size} 个素材 ZIP 下载中（演示）` });
+    // 行内注释5：真导出 —— POST /assets/exports 让后端打包，再按 download_url 下载 zip。
+    try {
+      const exp = await createAssetExport(Array.from(selected), `素材导出 ${selected.size} 项`);
+      if (!exp?.download_url) {
+        push({ tone: "warning", title: "导出失败", description: "后端未返回下载地址" });
+        return;
+      }
+      const res = await fetch(exp.download_url, {
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = exp.filename || "export.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      push({ tone: "success", title: "导出完成", description: `${exp.count} 个素材已打包下载` });
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "导出失败";
+      push({ tone: "danger", title: "导出失败", description: msg });
+    }
   };
 
   return (

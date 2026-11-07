@@ -132,6 +132,9 @@ public class BillingService {
     }
 
     // 行内注释4：结算 —— 冻结额转为已消费，可用余额已在冻结时扣除，此处只释放 frozen。
+    // 行内注释4.1：settle 记的 amount 是实际结算额（= 释放的冻结额），
+    //             而不是请求的 points —— 两者不一致时（冻结已被别的操作释放过），
+    //             按实际释放额记账，流水与余额才对得上。
     public void settle(String userId, int points, String note, String taskId) {
         if (points <= 0) {
             return;
@@ -139,12 +142,20 @@ public class BillingService {
         Map<String, Object> account = requireAccount(userId);
         int frozen = Rows.num(account, "frozen");
         int release = Math.min(frozen, points);
+        if (release <= 0) {
+            appendLedger(userId, "settle", 0, note + "（无冻结可结算，已跳过）", taskId, null);
+            return;
+        }
         store.update(AuthService.T_USERS, userId, Rows.row(
                 "frozen", frozen - release));
-        appendLedger(userId, "settle", -points, note, taskId, null);
+        appendLedger(userId, "settle", -release, note, taskId, null);
     }
 
     // 行内注释5：退回 —— 释放冻结并回补可用余额，写 refund 流水。
+    // 行内注释5.1：护栏 —— 只有真正还冻结着的额度才能退。
+    //             之前是无条件把 points 加回余额，一旦上层漏了幂等判断
+    //             （比如任务被取消后又判一次失败），就会凭空造出积分。
+    //             这里按「实际释放的冻结额」退款，释放不足就只退释放的那部分。
     public void refund(String userId, int points, String note, String taskId) {
         if (points <= 0) {
             return;
@@ -152,10 +163,16 @@ public class BillingService {
         Map<String, Object> account = requireAccount(userId);
         int frozen = Rows.num(account, "frozen");
         int release = Math.min(frozen, points);
+        if (release <= 0) {
+            // 行内注释5.2：没有可释放的冻结 —— 说明这笔钱早就退过/结算过，
+            //             再退就是重复退款。只记流水不加分，保留审计痕迹。
+            appendLedger(userId, "refund", 0, note + "（无冻结可退，已跳过）", taskId, null);
+            return;
+        }
         store.update(AuthService.T_USERS, userId, Rows.row(
                 "frozen", frozen - release,
-                "balance", Rows.num(account, "balance") + points));
-        appendLedger(userId, "refund", points, note, taskId, null);
+                "balance", Rows.num(account, "balance") + release));
+        appendLedger(userId, "refund", release, note, taskId, null);
     }
 
     // 行内注释6：充值 —— 记 recharge 流水并加余额；赠送部分单独记 adjust。
@@ -246,20 +263,59 @@ public class BillingService {
     }
 
     // 行内注释9：流水查询 —— 只读、倒序、分页；type 支持 recharge/consume/refund/bonus/all。
+    // 行内注释9.1：consume 要同时匹配 freeze 与 settle ——
+    //             积分在「提交任务」时就冻结了，用户视角的「消耗」从那一刻就开始；
+    //             只认 settle 会让「消耗」筛选在任务未完成时永远为空。
+    // 行内注释9.2：freeze 与 settle 是同一次消费的两段记账（冻结 → 结算），
+    //             前端按「消耗」展示时只应看到一条 —— 靠 ledger_type 归一化去重。
     public List<Map<String, Object>> ledger(String userId, String type, int page, int pageSize) {
         List<Map<String, Object>> all = store.listWhere(T_LEDGER + "_" + userId, r -> true).stream()
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .toList();
         List<Map<String, Object>> filtered = switch (type == null ? "all" : type) {
             case "recharge" -> all.stream().filter(r -> "recharge".equals(Rows.str(r, "type"))).toList();
-            case "consume" -> all.stream().filter(r -> "settle".equals(Rows.str(r, "type"))).toList();
+            case "consume" -> all.stream().filter(r -> "settle".equals(Rows.str(r, "type"))
+                    || "freeze".equals(Rows.str(r, "type"))).toList();
             case "refund" -> all.stream().filter(r -> "refund".equals(Rows.str(r, "type"))).toList();
             case "bonus" -> all.stream().filter(r -> "adjust".equals(Rows.str(r, "type"))).toList();
             default -> all;
         };
         int from = Math.min((page - 1) * pageSize, filtered.size());
         int to = Math.min(from + pageSize, filtered.size());
-        return filtered.subList(from, to);
+        return filtered.subList(from, to).stream().map(this::ledgerView).toList();
+    }
+
+    /**
+     * 流水视图 —— 对外暴露稳定的字段名与归一化类型。
+     * 行内注释9.3：type_label 是中文展示名，type 仍是原始码（前端做状态判断要用原始码）。
+     * 行内注释9.4：balance 是这条流水发生「之后」的余额快照，
+     *             freeze 记的是扣后余额，settle 不动余额所以两者相同 —— 前端展示无误。
+     */
+    private Map<String, Object> ledgerView(Map<String, Object> r) {
+        String code = Rows.str(r, "type", "");
+        return Rows.row(
+                "id", Rows.str(r, "id"),
+                "user_id", Rows.str(r, "user_id", ""),
+                "type", code,
+                "type_label", ledgerTypeLabel(code),
+                "amount", Rows.num(r, "amount"),
+                "balance", Rows.num(r, "balance"),
+                "note", Rows.str(r, "note", ""),
+                "task_id", Rows.str(r, "task_id", ""),
+                "order_no", Rows.str(r, "order_no", ""),
+                "created_at", Rows.str(r, "created_at"));
+    }
+
+    /** 流水类型中文名 —— 与前端 TYPE_LABEL 保持一致。 */
+    private String ledgerTypeLabel(String code) {
+        return switch (code == null ? "" : code) {
+            case "recharge" -> "充值";
+            case "freeze" -> "冻结";
+            case "settle" -> "消耗";
+            case "refund" -> "退回";
+            case "adjust" -> "赠送";
+            default -> code;
+        };
     }
 
     public long ledgerCount(String userId, String type) {

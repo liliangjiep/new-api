@@ -95,6 +95,12 @@ public class TaskExecutor {
         if (task == null) {
             throw new BizException(ErrorCode.TASK_NOT_FOUND);
         }
+        // 行内注释3.3.1：终结态任务不再执行 —— 取消/已完成/已失败的任务再跑一次
+        //                 会拿已经结算或退回的额度再动一次账。
+        String status = Rows.str(task, "status", "");
+        if ("succeeded".equals(status) || "failed".equals(status) || "canceled".equals(status)) {
+            return tasks.get(Rows.str(task, "user_id"), taskId);
+        }
         String modelKey = Rows.str(task, "model_key", "");
         List<ModelAdapter.EndpointSnapshot> candidates = resolveEndpoints(modelKey, task);
 

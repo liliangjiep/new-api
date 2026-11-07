@@ -122,6 +122,30 @@ export async function listTasks(query?: {
 }
 
 /**
+ * 取消任务 —— 仅 pending 可取消，取消后积分全额退回。
+ * 行内注释4：已终结的任务会返回 409，由调用方按「提示已不可取消」处理。
+ */
+export async function cancelTask(id: string): Promise<TaskRecord> {
+  return api.post<TaskRecord>(`/tasks/${id}/cancel`, {});
+}
+
+/**
+ * 重试任务 —— 仅 failed 可重试，重新冻结积分并回到 pending。
+ */
+export async function retryTask(id: string): Promise<TaskRecord> {
+  return api.post<TaskRecord>(`/tasks/${id}/retry`, {});
+}
+
+/**
+ * 执行任务 —— 同步跑完上游生命周期，直接落到终态。
+ * 行内注释4.1：后端内部已带多站回退与轮询，这里同步等待；
+ *             真实中转站耗时较长，前端通常用轮询代替本接口。
+ */
+export async function executeTask(id: string): Promise<TaskRecord> {
+  return api.post<TaskRecord>(`/tasks/${id}/execute`, {});
+}
+
+/**
  * 等待既有任务到终态（工具类接口提交后自带任务 id，这里只轮询）。
  * 行内注释3.1：工具类接口（/tools/*）返回的也是统一任务对象，所以复用同一套轮询逻辑。
  */

@@ -62,8 +62,25 @@ function PanelRouter({ sectionKey }: { sectionKey: string }) {
     case "reports": return <ReportsPanel />;
     case "audit": return <AuditPanel />;
     case "invite-codes": return <InviteCodesPanel />;
-    default: return <GenericPanel sectionKey={sectionKey} />;
+    // 行内注释3.1：ADMIN_SECTIONS 的 20 个分组都已接上真实接口，无一落到兜底。
+    //             这里兜底到「未知分组」空态而不是假数据表格 ——
+    //             假数据会让「后台所有页都有数据」这个错觉一直存在。
+    default: return <UnknownSectionPanel sectionKey={sectionKey} />;
   }
+}
+
+/** 未知分组 —— 后端没有对应接口，明确告知而不是渲染假数据。 */
+function UnknownSectionPanel({ sectionKey }: { sectionKey: string }) {
+  return (
+    <Card>
+      <CardBody>
+        <EmptyState
+          title="该分组暂无接口"
+          description={`分组 ${sectionKey} 尚未接入后端，请检查 ADMIN_SECTIONS 与 PanelRouter 的映射。`}
+        />
+      </CardBody>
+    </Card>
+  );
 }
 
 /* ---------------- 通用：搜索分页表格兜底 ---------------- */
@@ -1657,52 +1674,3 @@ function InviteCodesPanel() {
     </div>
   );
 }
-/* ---------------- 兜底通用 ---------------- */
-function GenericPanel({ sectionKey }: { sectionKey: string }) {
-  const { push } = useToast();
-  const [q, setQ] = useState("");
-  const [page, setPage] = useState(1);
-  const rows = useMemo(
-    () =>
-      Array.from({ length: 18 }, (_, i) => ({
-        id: `${sectionKey}_${String(i + 1).padStart(3, "0")}`,
-        name: `${sectionKey} 记录 ${i + 1}`,
-        status: i % 5 === 4 ? "异常" : "正常",
-        time: `2026-10-${String((i % 28) + 1).padStart(2, "0")} 09:${String(i % 60).padStart(2, "0")}`,
-      })).filter((r) => !q.trim() || r.name.includes(q.trim()) || r.id.includes(q.trim())),
-    [sectionKey, q]
-  );
-  const pageSize = 8;
-  return (
-    <div className="space-y-4">
-      <Toolbar>
-        <Input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="搜索 ID 或名称" aria-label="搜索" className="max-w-sm" />
-        <Select aria-label="状态筛选" defaultValue="all"><option value="all">全部状态</option><option value="ok">正常</option><option value="bad">异常</option></Select>
-        <Button variant="secondary" size="sm" onClick={() => push({ tone: "success", title: "导出已开始", description: `${rows.length} 条记录 CSV 下载中` })}><Download className="size-3.5" aria-hidden />导出</Button>
-      </Toolbar>
-      <Card>
-        <CardBody className="p-0">
-          <Table>
-            <thead><tr><Th>ID</Th><Th>名称</Th><Th>状态</Th><Th>时间</Th><Th>操作</Th></tr></thead>
-            <tbody>
-              {rows.slice((page - 1) * pageSize, page * pageSize).map((r) => (
-                <tr key={r.id}>
-                  <Td className="tabular text-fg-muted">{r.id}</Td>
-                  <Td>{r.name}</Td>
-                  <Td><Badge tone={r.status === "正常" ? "success" : "danger"}>{r.status}</Badge></Td>
-                  <Td className="tabular text-fg-subtle">{r.time}</Td>
-                  <Td><span className="flex gap-1"><Button variant="ghost" size="sm" onClick={() => push({ tone: "neutral", title: `查看 ${r.id}`, description: "前端 mock：联调后打开详情抽屉" })}><Eye className="size-3" />查看</Button><Button variant="ghost" size="sm" onClick={() => push({ tone: "success", title: `已处理 ${r.id}`, description: "前端 mock：联调后调用处理接口" })}>处理</Button></span></Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </CardBody>
-        <div className="border-t border-line"><Pagination page={page} pageSize={pageSize} total={rows.length} onPageChange={setPage} /></div>
-      </Card>
-      <p className="flex items-center gap-1.5 text-[11px] text-fg-subtle"><Search className="size-3" aria-hidden />TODO(API): 接入 GET /admin/{sectionKey} 真实分页接口。</p>
-    </div>
-  );
-}
-
-// 占位引用，避免 tree-shaking 告警
-void Megaphone;

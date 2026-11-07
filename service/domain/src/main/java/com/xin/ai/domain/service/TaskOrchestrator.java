@@ -97,6 +97,10 @@ public class TaskOrchestrator {
     }
 
     // 行内注释7：取消 —— 仅 pending 可取消，取消后全额退回冻结积分。
+    // 行内注释7.1：状态写 canceled 而不是 failed —— 「用户主动取消」与「生成失败」
+    //             是两件事，前端任务中心要分别展示、也只有 failed 才允许重试。
+    // 行内注释7.2：必须清掉 points_frozen —— 否则后续任何一次 markFailed/markSucceeded
+    //             都会拿这行冻结额再退一次款，凭空造出积分（取消后再执行即可复现）。
     public Map<String, Object> cancel(String userId, String taskId) {
         Map<String, Object> task = requireOwned(userId, taskId);
         if (!"pending".equals(Rows.str(task, "status"))) {
@@ -104,13 +108,16 @@ public class TaskOrchestrator {
         }
         int frozen = Rows.num(task, "points_frozen");
         store.update(T_TASKS, taskId, Rows.row(
-                "status", "failed", "error_code", "task.cancelled",
-                "fail_reason", "用户取消", "updated_at", Times.full(Times.now())));
+                "status", "canceled", "error_code", "task.cancelled",
+                "fail_reason", "用户取消",
+                "points_frozen", 0, "points_charged", 0,
+                "updated_at", Times.full(Times.now())));
         billing.refund(userId, frozen, "任务取消退回", taskId);
         return view(requireOwned(userId, taskId));
     }
 
     // 行内注释8：重试 —— 仅 failed 可重试，重新冻结并回到 pending。
+    // 行内注释8.1：只有 failed 能重试 —— canceled 是用户主动放弃，不该被重试复活。
     public Map<String, Object> retry(String userId, String taskId) {
         Map<String, Object> task = requireOwned(userId, taskId);
         if (!"failed".equals(Rows.str(task, "status"))) {
@@ -141,9 +148,11 @@ public class TaskOrchestrator {
     }
 
     // 行内注释10：成功结算 —— 冻结转实扣，状态置 succeeded。
+    // 行内注释10.1：幂等护栏 —— 任务已是终结态（succeeded/failed/canceled）就直接返回。
+    //             没有这道护栏时，「取消后再执行一次」会二次结算，把冻结额再扣一遍。
     public void markSucceeded(String taskId, Map<String, Object> result) {
         Map<String, Object> task = store.find(T_TASKS, taskId).orElse(null);
-        if (task == null) {
+        if (task == null || isTerminal(Rows.str(task, "status"))) {
             return;
         }
         String userId = Rows.str(task, "user_id");
@@ -157,9 +166,10 @@ public class TaskOrchestrator {
     }
 
     // 行内注释11：失败退回 —— 释放冻结并回补余额。
+    // 行内注释11.1：同样有幂等护栏 —— 终结态任务不再重复退款。
     public void markFailed(String taskId, String errorCode, String message) {
         Map<String, Object> task = store.find(T_TASKS, taskId).orElse(null);
-        if (task == null) {
+        if (task == null || isTerminal(Rows.str(task, "status"))) {
             return;
         }
         String userId = Rows.str(task, "user_id");
@@ -170,6 +180,11 @@ public class TaskOrchestrator {
                 "points_frozen", 0, "points_charged", 0,
                 "updated_at", Times.full(Times.now())));
         billing.refund(userId, frozen, "任务失败退回", taskId);
+    }
+
+    /** 终结态判定 —— succeeded / failed / canceled 都不可再改账。 */
+    private boolean isTerminal(String status) {
+        return "succeeded".equals(status) || "failed".equals(status) || "canceled".equals(status);
     }
 
     // 行内注释12：批量提交 —— 一个 batch 挂多个 task，供批次列表与 SSE 事件流使用。

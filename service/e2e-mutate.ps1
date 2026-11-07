@@ -110,18 +110,47 @@ $slot = Chk "voice-slots/create" (J "POST" "/voice-slots" @{ voice_id=$vc.id; na
 Chk "authorizations/create" (J "POST" "/authorizations" @{ type="商用授权"; subject="李四"; file_url="https://example.com/b.pdf" } $H) $null
 
 # ---------- 4. 任务取消 / 重试 ----------
+# 行内注释2.2：状态机契约（与 TaskOrchestrator 一致）——
+#               pending --cancel--> canceled（不可重试、不可再取消）
+#               pending --execute(失败)--> failed --retry--> pending
+#               canceled 与 failed 是两个不同的终态，脚本分别校验。
 $q = J "POST" "/tasks/quote" @{ model_key="image.t2i.2k"; spec="2K"; count=1; params=@{ prompt="x" } } $H
 $ik = "mut-" + (Get-Random)
 $t = Chk "tasks/submit" (J "POST" "/tasks/submit" @{ model_key="image.t2i.2k"; spec="2K"; count=1; params=@{ prompt="x" }; quote_fingerprint=$q.data.fingerprint; idempotency_key=$ik } $H) $null
 $c = Chk "tasks/cancel" (J "POST" "/tasks/$($t.id)/cancel" @{} $H) $null
-if ($c.status -eq "failed") { $script:pass++; W "OK    tasks 取消后状态=failed" } else { $script:fail++; W "FAIL  tasks 取消后状态=$($c.status)" }
-$rt = Chk "tasks/retry" (J "POST" "/tasks/$($t.id)/retry" @{} $H) $null
+if ($c.status -eq "canceled") { $script:pass++; W "OK    tasks 取消后状态=canceled" } else { $script:fail++; W "FAIL  tasks 取消后状态=$($c.status)" }
+# 行内注释2.2.1：取消后积分必须全额退回，且冻结归零 —— 这是账务闭环的硬校验。
+$b0 = J "GET" "/points/balance" $null $H
+if ($b0.data.frozen -eq 0) { $script:pass++; W "OK    tasks 取消后冻结归零" } else { $script:fail++; W "FAIL  tasks 取消后冻结=$($b0.data.frozen)" }
+# 行内注释2.2.2：canceled 终态不可重试 —— 用户主动放弃的活不该被复活。
+ChkDeny "tasks 取消后拒绝重试" (J "POST" "/tasks/$($t.id)/retry" @{} $H)
+ChkDeny "tasks 取消后拒绝重复取消" (J "POST" "/tasks/$($t.id)/cancel" @{} $H)
+# 行内注释2.2.3：取消后再执行不得二次改账 —— 余额必须与取消后完全一致。
+$b1 = J "GET" "/points/balance" $null $H
+J "POST" "/tasks/$($t.id)/execute" @{} $H | Out-Null
+$b2 = J "GET" "/points/balance" $null $H
+if ($b1.data.available -eq $b2.data.available -and $b1.data.frozen -eq $b2.data.frozen) {
+  $script:pass++; W "OK    tasks 取消后重复执行不改账"
+} else {
+  $script:fail++; W "FAIL  tasks 取消后重复执行改了账 $($b1.data.available)/$($b1.data.frozen) -> $($b2.data.available)/$($b2.data.frozen)"
+}
+# 行内注释2.2.4：failed 终态可重试 —— 这条路径必须重新冻结积分并回到 pending。
+$q2 = J "POST" "/tasks/quote" @{ model_key="image.t2i.2k"; spec="2K"; count=1; params=@{ prompt="x" } } $H
+$ik2 = "mut-" + (Get-Random)
+$t2 = Chk "tasks/submit 2" (J "POST" "/tasks/submit" @{ model_key="image.t2i.2k"; spec="2K"; count=1; params=@{ prompt="x" }; quote_fingerprint=$q2.data.fingerprint; idempotency_key=$ik2 } $H) $null
+J "POST" "/tasks/$($t2.id)/execute" @{} $H | Out-Null
+$ft = J "GET" "/tasks/$($t2.id)" $null $H
+if ($ft.data.status -eq "failed") { $script:pass++; W "OK    tasks 执行失败后状态=failed" } else { $script:fail++; W "FAIL  tasks 执行失败后状态=$($ft.data.status)" }
+# 行内注释2.2.6：failed 任务不可再取消（已终结）—— 取消只对 pending 开放。
+ChkDeny "tasks 已终结拒绝取消" (J "POST" "/tasks/$($t2.id)/cancel" @{} $H)
+$rt = Chk "tasks/retry" (J "POST" "/tasks/$($t2.id)/retry" @{} $H) $null
 if ($rt.status -eq "pending") { $script:pass++; W "OK    tasks 重试后状态=pending" } else { $script:fail++; W "FAIL  tasks 重试后状态=$($rt.status)" }
-# 行内注释2.3：取消护栏 —— 重试后任务又回到 pending，此时取消是「允许」的；
-#               真正该被拒的是「已经终结（failed）」的任务再次取消。
-$c2 = Chk "tasks/cancel 2" (J "POST" "/tasks/$($t.id)/cancel" @{} $H) $null
-if ($c2.status -eq "failed") { $script:pass++; W "OK    tasks 再次取消后状态=failed" } else { $script:fail++; W "FAIL  tasks 再次取消后状态=$($c2.status)" }
-ChkDeny "tasks 取消护栏（已终结）" (J "POST" "/tasks/$($t.id)/cancel" @{} $H)
+# 行内注释2.2.5：重试必须重新冻结积分 —— 可用余额回落、冻结额回升。
+$b3 = J "GET" "/points/balance" $null $H
+if ($b3.data.frozen -gt 0) { $script:pass++; W "OK    tasks 重试后重新冻结" } else { $script:fail++; W "FAIL  tasks 重试后未重新冻结" }
+# 行内注释2.2.7：重试回到 pending 后，取消重新变为允许 —— 状态机是循环的。
+$c3 = Chk "tasks 重试后可取消" (J "POST" "/tasks/$($t2.id)/cancel" @{} $H) $null
+if ($c3.status -eq "canceled") { $script:pass++; W "OK    tasks 重试后取消= canceled" } else { $script:fail++; W "FAIL  tasks 重试后取消状态=$($c3.status)" }
 
 # ---------- 5. 画布增删改 / 版本 / 分享 / 恢复 ----------
 $c = Chk "canvases/create" (J "POST" "/canvases" @{ title="变更画布" } $H) $null

@@ -85,6 +85,7 @@ export function LedgerPanel() {
   };
   const TYPE_LABEL: Record<string, string> = {
     recharge: "充值",
+    freeze: "冻结",
     settle: "消耗",
     refund: "退回",
     adjust: "赠送",
@@ -125,7 +126,7 @@ export function LedgerPanel() {
               {rows.map((l) => (
                 <tr key={l.id}>
                   <Td className="tabular whitespace-nowrap text-fg-muted">{l.created_at}</Td>
-                  <Td><Badge tone={l.amount > 0 ? "success" : l.type === "refund" ? "info" : "neutral"}>{TYPE_LABEL[l.type] ?? l.type}</Badge></Td>
+                  <Td><Badge tone={l.amount > 0 ? "success" : l.type === "refund" ? "info" : "neutral"}>{l.type_label ?? TYPE_LABEL[l.type] ?? l.type}</Badge></Td>
                   <Td className="text-fg-muted">{l.note || "—"}</Td>
                   <Td className={cn("tabular text-right", l.amount > 0 ? "text-success" : "text-fg")}>{l.amount > 0 ? `+${l.amount}` : l.amount}</Td>
                   <Td className="tabular text-right text-fg-muted">{l.balance?.toLocaleString() ?? "—"}</Td>

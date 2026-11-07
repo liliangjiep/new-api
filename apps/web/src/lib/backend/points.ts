@@ -13,7 +13,10 @@ export interface BalanceView {
 
 export interface LedgerItem {
   id: string;
+  /** 原始类型码 —— recharge/freeze/settle/refund/adjust，用于状态判断与筛选。 */
   type: string;
+  /** 中文名 —— 后端冗余给的兜底文案（充值/冻结/消耗/退回/赠送）。 */
+  type_label?: string;
   amount: number;
   balance: number;
   note?: string;

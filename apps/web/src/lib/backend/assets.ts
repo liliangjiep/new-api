@@ -104,6 +104,27 @@ export async function batchDeleteAssets(ids: string[]): Promise<number> {
   return r?.deleted ?? 0;
 }
 
+/** 导出包 —— 后端打包后回 download_url（本地无对象存储，包内是资产清单）。 */
+export interface AssetExport {
+  id: string;
+  filename: string;
+  label: string;
+  count: number;
+  download_url: string;
+  created_at?: string;
+}
+
+/**
+ * 创建导出包 —— POST /assets/exports。
+ * 行内注释4：ids 只传本人资产，越权的 id 后端会静默跳过（不泄露存在性）。
+ */
+export async function createAssetExport(
+  ids: string[],
+  label = "导出",
+): Promise<AssetExport> {
+  return api.post<AssetExport>("/assets/exports", { ids, label });
+}
+
 /**
  * 上传一个文件 —— 申请凭证 → 直传 → 回填。
  * 行内注释3：直传失败不阻断流程（本地无 OSS），仍然 complete 让资产落库可见。

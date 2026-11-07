@@ -177,6 +177,15 @@ export default function AccountPage() {
                 >
                   <span className="account-invoice-link-label">发票管理</span>
                 </Link>
+                {/* 行内注释3：账号设置入口 —— ProfilePanel / SecurityPanel / CreditsPanel /
+                               LedgerPanel / OrdersPanel 此前无路由入口，
+                               导致 /users/me、/auth/sessions、/users/me/password 等接口 UI 触达不到。 */}
+                <Link
+                  href="/account/settings"
+                  className="account-settings-link inline-flex h-9 items-center justify-center rounded-lg border border-line px-4 text-sm font-semibold text-foreground transition-colors hover:bg-interaction"
+                >
+                  <span className="account-settings-link-label">账号设置</span>
+                </Link>
               </div>
             </div>
 

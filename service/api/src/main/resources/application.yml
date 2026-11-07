@@ -56,6 +56,16 @@ xin:
     secret: ${XIN_JWT_SECRET:xin-ai-dev-secret-change-me}
     access-ttl-seconds: 900
     refresh-ttl-seconds: 2592000
+  sms:
+    # 行内注释10：验证码下发方式 —— mock=本地生成并回传 dev_code（仅开发），real=调用短信服务商。
+    # 行内注释11：mode=real 时响应里不再出现 dev_code，避免验证码泄露到前端/日志。
+    mode: ${XIN_SMS_MODE:mock}
+    # 行内注释12：real 模式下的服务商配置（阿里云短信示例，模板按实际改）。
+    provider: ${XIN_SMS_PROVIDER:aliyun}
+    access-key-id: ${XIN_SMS_ACCESS_KEY_ID:}
+    access-key-secret: ${XIN_SMS_ACCESS_KEY_SECRET:}
+    sign-name: ${XIN_SMS_SIGN_NAME:}
+    template-code: ${XIN_SMS_TEMPLATE_CODE:}
 
 logging:
   level:

@@ -30,7 +30,9 @@ public enum ErrorCode {
     COMMON_BAD_REQUEST("common.bad_request", "参数错误", 400),
     COMMON_CONFLICT("common.conflict", "幂等冲突，请求已处理", 409),
     COMMON_NOT_FOUND("common.not_found", "资源不存在", 404),
-    COMMON_INTERNAL("common.internal", "服务繁忙，请稍后重试", 500);
+    COMMON_INTERNAL("common.internal", "服务繁忙，请稍后重试", 500),
+    /** 内部错误（区别于 common.internal，可携带具体原因给调用方）。 */
+    COMMON_INTERNAL_ERROR("common.internal_error", "服务内部错误", 500);
 
     private final String code;
     private final String message;

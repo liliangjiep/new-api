@@ -5,6 +5,7 @@ import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
 import com.xin.ai.common.security.JwtUtils;
 import com.xin.ai.common.config.JwtProperties;
+import com.xin.ai.common.config.SmsProperties;
 import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import java.time.LocalDateTime;
@@ -40,11 +41,14 @@ public class AuthService {
     private final JwtProperties jwtProperties;
     /** 行内注释4.1：本地 Redis —— 验证码与发送冷却放 Redis，多实例共享；Redis 挂时自动降级。 */
     private final RedisService redis;
+    /** 行内注释4.2：短信通道配置 —— mode=real 时走真实服务商，响应不再回传 dev_code。 */
+    private final SmsProperties sms;
 
-    public AuthService(DataStore store, JwtProperties jwtProperties, RedisService redis) {
+    public AuthService(DataStore store, JwtProperties jwtProperties, RedisService redis, SmsProperties sms) {
         this.store = store;
         this.jwtProperties = jwtProperties;
         this.redis = redis;
+        this.sms = sms;
     }
 
     // 行内注释5：发送验证码 —— 冷却期未过直接报错；开发模式验证码固定为 6 位随机并回传给前端（体验版）。
@@ -69,6 +73,11 @@ public class AuthService {
         // 行内注释5.2：验证码同时写 Redis —— 校验时先查 Redis，命中即通过（免一次 DB 查询）。
         redis.set(smsKey(normalized), code, java.time.Duration.ofSeconds(CODE_TTL_SECONDS));
         // 行内注释6：体验版把验证码直接返回，省掉短信通道联调；生产删除该字段。
+        // 行内注释6.1：mode=real 时绝不能回传 dev_code —— 那是把验证码发给调用方。
+        if (sms.realMode()) {
+            SmsSender.send(sms, normalized, code);
+            return Rows.row("cooldown", CODE_COOLDOWN_SECONDS, "expires_in", CODE_TTL_SECONDS);
+        }
         return Rows.row("cooldown", CODE_COOLDOWN_SECONDS, "expires_in", CODE_TTL_SECONDS, "dev_code", code);
     }
 

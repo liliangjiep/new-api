@@ -14,7 +14,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * 行内注释3：Redis 连不上不会导致启动失败 —— RedisService 首次访问失败即降级到进程内缓存。
  */
 @Configuration
-@EnableConfigurationProperties({JwtProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, SmsProperties.class})
 public class CommonConfig {
 
     @Bean

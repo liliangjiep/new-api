@@ -9,3 +9,6 @@ service/smoke.ps1
 service/**/cp.txt
 service/**/api-cp.txt
 service/**/build-*.txt
+
+verify-out.txt
+smoke-out.txt

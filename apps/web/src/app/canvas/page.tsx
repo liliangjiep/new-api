@@ -3,6 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WorkspaceShell } from "@/components/features/WorkspaceShell";
 import { useToast } from "@/components/features/ToastHost";
+import { ApiError } from "@/lib/api";
+import { cn } from "@/lib/cn";
+import {
+  listCanvases,
+  createCanvas,
+  getCanvas,
+  renameCanvas,
+  saveCanvasGraph,
+  shareCanvas,
+  type CanvasNode,
+  type CanvasSummary,
+} from "@/lib/backend/canvas";
 
 /*
  * 原站 /canvas（实测 1:1，2026-10-30）
@@ -36,6 +48,8 @@ interface Project {
   id: string;
   title: string;
   at: string;
+  /** 行内注释1：画布版本号 —— 保存时要带上，后端比对不一致会 409。 */
+  version: number;
 }
 
 interface Card {
@@ -63,9 +77,73 @@ function CanvasEditor({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [titleOpen, setTitleOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(project.title);
+  const [version, setVersion] = useState(project.version);
+  const [saving, setSaving] = useState(false);
+  const [syncState, setSyncState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const areaRef = useRef<HTMLDivElement>(null);
   const panRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
   const dragCardRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  /** 行内注释2：卡片变化后延迟自动保存 —— 拖拽过程不触发保存。 */
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * 行内注释3：打开画布时从后端加载整图（nodes 即卡片列表）。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const c = await getCanvas(project.id);
+        if (cancelled) return;
+        setCards((c.nodes ?? []) as Card[]);
+        setVersion(c.version ?? 0);
+        setEditingTitle(c.title || project.title);
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : "加载画布失败";
+        push({ tone: "warning", title: "加载失败", description: msg });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
+
+  /**
+   * 行内注释4：自动保存 —— 卡片变化 800ms 后 PUT /canvases/{id}/graph。
+   */
+  const scheduleSave = useCallback(
+    (next: Card[]) => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(async () => {
+        setSaving(true);
+        setSyncState("saving");
+        try {
+          const saved = await saveCanvasGraph(project.id, next as CanvasNode[], [], version);
+          setVersion(saved.version);
+          setSyncState("saved");
+        } catch (e) {
+          setSyncState("error");
+          const msg = e instanceof ApiError ? e.message : "保存失败";
+          push({ tone: "danger", title: "保存失败", description: msg });
+        } finally {
+          setSaving(false);
+        }
+      }, 800);
+    },
+    [project.id, version, push],
+  );
+
+  const updateCards = useCallback(
+    (updater: (prev: Card[]) => Card[]) => {
+      setCards((prev) => {
+        const next = updater(prev);
+        scheduleSave(next);
+        return next;
+      });
+    },
+    [scheduleSave],
+  );
 
   const addCardAt = useCallback(
     (clientX: number, clientY: number) => {
@@ -75,10 +153,10 @@ function CanvasEditor({
       const x = (clientX - r.left - r.width / 2 - offset.x) / zoom;
       const y = (clientY - r.top - r.height / 2 - offset.y) / zoom;
       const id = `card_${Date.now()}`;
-      setCards((p) => [...p, { id, x, y, text: `卡片 ${p.length + 1}` }]);
+      updateCards((p) => [...p, { id, x, y, text: `卡片 ${p.length + 1}` }]);
       push({ tone: "success", title: "已添加卡片", description: "拖拽可移动，双击卡片可改名" });
     },
-    [offset, zoom, push]
+    [offset, zoom, push, updateCards]
   );
 
   const onAreaDoubleClick = (e: React.MouseEvent) => {
@@ -102,7 +180,7 @@ function CanvasEditor({
       const r = el.getBoundingClientRect();
       const x = (e.clientX - r.left - r.width / 2 - offset.x) / zoom - drag.dx;
       const y = (e.clientY - r.top - r.height / 2 - offset.y) / zoom - drag.dy;
-      setCards((p) => p.map((c) => (c.id === drag.id ? { ...c, x, y } : c)));
+      updateCards((p) => p.map((c) => (c.id === drag.id ? { ...c, x, y } : c)));
       return;
     }
     setOffset({ x: pan.ox + (e.clientX - pan.sx), y: pan.oy + (e.clientY - pan.sy) });
@@ -127,7 +205,7 @@ function CanvasEditor({
     const next = window.prompt("卡片名称", cur?.text ?? "");
     if (next === null) return;
     const v = next.trim() || cur?.text || "卡片";
-    setCards((p) => p.map((c) => (c.id === id ? { ...c, text: v } : c)));
+    updateCards((p) => p.map((c) => (c.id === id ? { ...c, text: v } : c)));
   };
 
   const tools: { key: typeof tool | "add"; label: string; icon: React.ReactNode }[] = [
@@ -253,13 +331,30 @@ function CanvasEditor({
         </div>
         <div className="flex items-center gap-1.5">
           <span className="mr-1 hidden items-center gap-1 text-[11px] text-muted sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            已同步
+            {/* 行内注释5：同步状态真实反映后端保存结果 —— 不再是写死的「已同步」。 */}
+            <span
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                syncState === "saving" ? "bg-amber-500" : syncState === "error" ? "bg-red-500" : "bg-emerald-500",
+              )}
+            />
+            {syncState === "saving" ? "保存中…" : syncState === "error" ? "保存失败" : "已同步"}
           </span>
           <button
             type="button"
             aria-label="分享画布"
-            onClick={() => push({ tone: "success", title: "分享链接已复制" })}
+            onClick={() => {
+              void (async () => {
+                try {
+                  const r = await shareCanvas(project.id);
+                  await navigator.clipboard?.writeText(r.share_url);
+                  push({ tone: "success", title: "分享链接已复制", description: r.share_url });
+                } catch (e) {
+                  const msg = e instanceof ApiError ? e.message : "生成分享链接失败";
+                  push({ tone: "danger", title: "分享失败", description: msg });
+                }
+              })();
+            }}
             className="inline-flex h-8 items-center gap-1 rounded-lg border border-black/[0.06] bg-white px-2.5 text-xs font-medium shadow-sm transition hover:shadow"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-3.5 w-3.5">
@@ -369,7 +464,7 @@ function CanvasEditor({
                     aria-label={`删除${c.text}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setCards((p) => p.filter((x) => x.id !== c.id));
+                      updateCards((p) => p.filter((x) => x.id !== c.id));
                       push({ tone: "neutral", title: "已删除卡片" });
                     }}
                     className="grid h-5 w-5 place-items-center rounded-md text-muted hover:bg-black/[0.05] hover:text-foreground"
@@ -500,36 +595,67 @@ export default function CanvasPage() {
   const [collapsed, setCollapsed] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  /**
+   * 行内注释6：画布列表走后端 —— 之前是 localStorage 存的假数据，
+   *             换台设备看不到自己建的画布。
+   */
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const raw = localStorage.getItem("xin-canvas-projects");
-      if (raw) setProjects(JSON.parse(raw));
-    } catch {
-      /* ignore */
+      const rows = await listCanvases();
+      setProjects(
+        (rows ?? []).map((c: CanvasSummary) => ({
+          id: c.id,
+          title: c.title,
+          at: c.at,
+          version: c.version ?? 0,
+        })),
+      );
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "加载画布失败";
+      push({ tone: "warning", title: "加载失败", description: msg });
+    } finally {
+      setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const persist = (next: Project[]) => {
-    setProjects(next);
-    try {
-      localStorage.setItem("xin-canvas-projects", JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
-  };
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  const createProject = () => {
-    const at = new Date().toLocaleString("zh-CN", { hour12: false });
-    const np = { id: `canvas_${Date.now()}`, title: `未命名画布 ${projects.length + 1}`, at };
-    const next = [np, ...projects];
-    persist(next);
-    setActiveId(np.id);
-    push({ tone: "success", title: "已新建画布", description: np.title });
+  const createProject = async () => {
+    try {
+      const c = await createCanvas();
+      const np: Project = { id: c.id, title: c.title, at: c.updated_at, version: c.version ?? 0 };
+      setProjects((p) => [np, ...p]);
+      setActiveId(np.id);
+      push({ tone: "success", title: "已新建画布", description: np.title });
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "新建失败";
+      push({ tone: "danger", title: "新建失败", description: msg });
+    }
   };
 
   const openProject = (p: Project) => setActiveId(p.id);
   const active = projects.find((p) => p.id === activeId) ?? null;
+
+  /**
+   * 行内注释7：重命名走后端 PATCH /canvases/{id}。
+   */
+  const doRename = async (title: string) => {
+    if (!active) return;
+    try {
+      const c = await renameCanvas(active.id, title);
+      setProjects((p) => p.map((x) => (x.id === active.id ? { ...x, title: c.title } : x)));
+      push({ tone: "success", title: "已重命名" });
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "重命名失败";
+      push({ tone: "danger", title: "重命名失败", description: msg });
+    }
+  };
 
   return (
     <WorkspaceShell>
@@ -537,7 +663,7 @@ export default function CanvasPage() {
         <CanvasEditor
           project={active}
           onBack={() => setActiveId(null)}
-          onRename={(title) => persist(projects.map((p) => (p.id === active.id ? { ...p, title } : p)))}
+          onRename={(title) => void doRename(title)}
         />
       ) : (
         <div className="canvas-workspace-layout flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:min-h-0 lg:h-full">
@@ -636,11 +762,11 @@ export default function CanvasPage() {
                     <div
                       role="button"
                       tabIndex={0}
-                      onClick={createProject}
+                      onClick={() => void createProject()}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          createProject();
+                          void createProject();
                         }
                       }}
                       className="canvas-start-create-card group/card relative flex w-full flex-col rounded-xl border-0 bg-transparent shadow-none ring-0 cursor-pointer"
@@ -669,6 +795,9 @@ export default function CanvasPage() {
                         </p>
                       </div>
                     </div>
+                    {loading ? (
+                      <p className="col-span-full py-8 text-center text-xs text-muted">加载中…</p>
+                    ) : null}
                     {projects.map((p) => (
                       <button
                         key={p.id}

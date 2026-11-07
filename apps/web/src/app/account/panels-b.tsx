@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button, Input, Label, Select } from "@/components/ui/primitives";
 import { Card, CardBody, CardHeader, CardTitle, Badge, EmptyState, Table, Th, Td } from "@/components/ui/surfaces";
 import { Modal } from "@/components/ui/overlays";
@@ -8,20 +8,27 @@ import { useToast } from "@/components/features/ToastHost";
 import { RECHARGE_PACKAGES } from "@/lib/domain";
 import { Key, Receipt, Wallet, CreditCard, Plus, Copy, Eye, EyeOff, AlertTriangle, ShieldCheck, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/cn";
-
-const LEDGER = [
-  { id: "led_01", type: "充值", amount: 520, balance: 2480, time: "2026-10-28 14:22", note: "标准包" },
-  { id: "led_02", type: "消耗", amount: -45, balance: 1960, time: "2026-10-29 20:33", note: "商详套图 6 张" },
-  { id: "led_03", type: "消耗", amount: -320, balance: 2005, time: "2026-10-30 09:04", note: "厂家介绍视频 60 秒" },
-  { id: "led_04", type: "赠送", amount: 40, balance: 2325, time: "2026-10-28 14:22", note: "标准包赠送" },
-  { id: "led_05", type: "退回", amount: 8, balance: 2480, time: "2026-10-29 22:17", note: "字幕擦除失败退回" },
-];
+import { ApiError } from "@/lib/api";
+import { getBalance, getLedger, listRechargeOrders, type BalanceView, type LedgerItem, type RechargeOrder } from "@/lib/backend/points";
+import { listInvoices, createInvoice, type InvoiceItem } from "@/lib/backend/commerce";
 
 export function CreditsPanel() {
   const { push } = useToast();
   const [pkg, setPkg] = useState("standard");
   const [payOpen, setPayOpen] = useState(false);
+  const [balance, setBalance] = useState<BalanceView | null>(null);
   const chosen = RECHARGE_PACKAGES.find((p) => p.code === pkg);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setBalance(await getBalance());
+      } catch {
+        // 行内注释1：余额加载失败不打断页面 —— 面板本身还有套餐与充值入口可用。
+      }
+    })();
+  }, []);
+
   return (
     <div className="space-y-4">
       <Card>
@@ -29,8 +36,8 @@ export function CreditsPanel() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="flex items-center gap-2 text-xs text-fg-subtle"><Wallet className="size-3.5 text-accent" aria-hidden />可用积分</p>
-              <p className="tabular mt-1 text-4xl font-semibold tracking-tight">2,480</p>
-              <p className="tabular mt-1.5 text-xs text-fg-subtle">冻结 0 · 有效期至 2028-10-28 · 不可提现/转赠</p>
+              <p className="tabular mt-1 text-4xl font-semibold tracking-tight">{(balance?.available ?? 0).toLocaleString()}</p>
+              <p className="tabular mt-1.5 text-xs text-fg-subtle">冻结 {balance?.frozen ?? 0} · 有效期至 {balance?.expires_at ?? "永久有效"}</p>
             </div>
             <Button onClick={() => setPayOpen(true)}>去充值</Button>
           </div>
@@ -52,66 +59,154 @@ export function CreditsPanel() {
           </div>
         </CardBody>
       </Card>
-      {/* 行内注释：充值下单 mock —— 选套餐→确认→扫码占位→到账流水 */}
-      <Modal open={payOpen} onClose={() => setPayOpen(false)} title="确认充值" description="积分自到账起 2 年有效，不可提现" footer={<><Button variant="secondary" onClick={() => setPayOpen(false)}>取消</Button><Button onClick={() => { setPayOpen(false); push({ tone: "success", title: "充值成功", description: `${chosen?.name}已到账 ${chosen?.credits}积分` }); }}>确认支付 ¥{chosen?.amount}</Button></>}>
+      <Modal open={payOpen} onClose={() => setPayOpen(false)} title="确认充值" description="积分自到账起 2 年有效，不可提现" footer={<><Button variant="secondary" onClick={() => setPayOpen(false)}>取消</Button><Button onClick={() => { setPayOpen(false); push({ tone: "neutral", title: "请到「我的积分」页充值", description: "该页面已接入真实下单接口" }); }}>去下单</Button></>}>
         <p className="text-sm text-fg">套餐：{chosen?.name} · 到账 {chosen?.credits} 积分（含赠送）</p>
-        <p className="tabular mt-1 text-xs text-fg-subtle">订单号 ord_{Date.now().toString().slice(-8)} · 支持微信/支付宝（企业主体）</p>
+        <p className="tabular mt-1 text-xs text-fg-subtle">支持微信 / 支付宝（企业主体）</p>
       </Modal>
     </div>
   );
 }
 
+/**
+ * 行内注释2：真流水 —— GET /points/ledger，按类型过滤走后端 type 参数。
+ */
 export function LedgerPanel() {
+  const { push } = useToast();
   const [type, setType] = useState("全部");
-  const rows = LEDGER.filter((l) => type === "全部" || l.type === type);
+  const [rows, setRows] = useState<LedgerItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const TYPE_MAP: Record<string, string | undefined> = {
+    全部: undefined,
+    充值: "recharge",
+    消耗: "consume",
+    退回: "refund",
+    赠送: "bonus",
+  };
+  const TYPE_LABEL: Record<string, string> = {
+    recharge: "充值",
+    settle: "消耗",
+    refund: "退回",
+    adjust: "赠送",
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getLedger({ page: 1, pageSize: 50, type: TYPE_MAP[type] });
+      setRows(res.data ?? []);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "加载流水失败";
+      push({ tone: "warning", title: "加载失败", description: msg });
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   return (
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2"><Wallet className="size-4 text-accent" aria-hidden />积分流水</CardTitle>
         <span className="flex items-center gap-2"><Select value={type} onChange={(e) => setType(e.target.value)} aria-label="流水类型"><option>全部</option><option>充值</option><option>消耗</option><option>退回</option><option>赠送</option></Select><Badge tone="neutral">不可变记录</Badge></span>
       </CardHeader>
       <CardBody className="p-0">
-        <Table>
-          <thead><tr><Th>时间</Th><Th>类型</Th><Th>说明</Th><Th className="text-right">变动</Th><Th className="text-right">余额</Th></tr></thead>
-          <tbody>
-            {rows.map((l) => (
-              <tr key={l.id}>
-                <Td className="tabular whitespace-nowrap text-fg-muted">{l.time}</Td>
-                <Td><Badge tone={l.amount > 0 ? "success" : l.type === "退回" ? "info" : "neutral"}>{l.type}</Badge></Td>
-                <Td className="text-fg-muted">{l.note}</Td>
-                <Td className={cn("tabular text-right", l.amount > 0 ? "text-success" : "text-fg")}>{l.amount > 0 ? `+${l.amount}` : l.amount}</Td>
-                <Td className="tabular text-right text-fg-muted">{l.balance.toLocaleString()}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+        {loading ? (
+          <p className="py-8 text-center text-xs text-fg-subtle">加载中…</p>
+        ) : rows.length === 0 ? (
+          <EmptyState icon={<Wallet className="size-5" />} title="暂无流水" description="充值或消耗后这里会有记录" />
+        ) : (
+          <Table>
+            <thead><tr><Th>时间</Th><Th>类型</Th><Th>说明</Th><Th className="text-right">变动</Th><Th className="text-right">余额</Th></tr></thead>
+            <tbody>
+              {rows.map((l) => (
+                <tr key={l.id}>
+                  <Td className="tabular whitespace-nowrap text-fg-muted">{l.created_at}</Td>
+                  <Td><Badge tone={l.amount > 0 ? "success" : l.type === "refund" ? "info" : "neutral"}>{TYPE_LABEL[l.type] ?? l.type}</Badge></Td>
+                  <Td className="text-fg-muted">{l.note || "—"}</Td>
+                  <Td className={cn("tabular text-right", l.amount > 0 ? "text-success" : "text-fg")}>{l.amount > 0 ? `+${l.amount}` : l.amount}</Td>
+                  <Td className="tabular text-right text-fg-muted">{l.balance?.toLocaleString() ?? "—"}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
       </CardBody>
     </Card>
   );
 }
 
+/**
+ * 行内注释3：真订单 —— GET /recharge/orders。
+ */
 export function OrdersPanel() {
-  const [orders] = useState([
-    { no: "ord_20261028_001", pkg: "标准包", amt: 500, cr: 520, status: "已支付", time: "2026-10-28 14:22" },
-    { no: "ord_20261020_004", pkg: "进阶包", amt: 2000, cr: 2120, status: "已支付", time: "2026-10-20 11:03" },
-    { no: "ord_20261012_002", pkg: "体验包", amt: 99, cr: 100, status: "已支付", time: "2026-10-12 09:41" },
-  ]);
+  const { push } = useToast();
+  const [orders, setOrders] = useState<RechargeOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await listRechargeOrders({ page: 1, pageSize: 50 });
+        setOrders(res.data ?? []);
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : "加载订单失败";
+        push({ tone: "warning", title: "加载失败", description: msg });
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [push]);
+
+  const STATUS_TONE: Record<string, "success" | "warning" | "neutral" | "danger"> = {
+    paid: "success",
+    succeeded: "success",
+    pending: "warning",
+    closed: "neutral",
+    failed: "danger",
+  };
+  const STATUS_LABEL: Record<string, string> = {
+    paid: "已支付",
+    succeeded: "已支付",
+    pending: "待支付",
+    closed: "已关闭",
+    failed: "已失败",
+  };
+
   return (
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="size-4 text-accent" aria-hidden />充值订单</CardTitle><Badge tone="neutral">{orders.length}</Badge></CardHeader>
       <CardBody className="p-0">
-        <Table>
-          <thead><tr><Th>订单号</Th><Th>套餐</Th><Th>金额</Th><Th>积分</Th><Th>状态</Th><Th>时间</Th></tr></thead>
-          <tbody>
-            {orders.map((o) => (
-              <tr key={o.no}><Td className="tabular text-fg-muted">{o.no}</Td><Td>{o.pkg}</Td><Td className="tabular">¥{o.amt}</Td><Td className="tabular text-accent">{o.cr}</Td><Td><Badge tone="success">{o.status}</Badge></Td><Td className="tabular text-fg-subtle">{o.time}</Td></tr>
-            ))}
-          </tbody>
-        </Table>
+        {loading ? (
+          <p className="py-8 text-center text-xs text-fg-subtle">加载中…</p>
+        ) : orders.length === 0 ? (
+          <EmptyState icon={<CreditCard className="size-5" />} title="暂无订单" description="充值后订单会显示在这里" />
+        ) : (
+          <Table>
+            <thead><tr><Th>订单号</Th><Th>积分</Th><Th>状态</Th><Th>时间</Th></tr></thead>
+            <tbody>
+              {orders.map((o) => (
+                <tr key={o.order_no}>
+                  <Td className="tabular text-fg-muted">{o.order_no}</Td>
+                  <Td className="tabular text-accent">{o.credits}{o.bonus ? ` (+${o.bonus})` : ""}</Td>
+                  <Td><Badge tone={STATUS_TONE[o.status] ?? "neutral"}>{STATUS_LABEL[o.status] ?? o.status}</Badge></Td>
+                  <Td className="tabular text-fg-subtle">{o.created_at}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
       </CardBody>
     </Card>
   );
 }
 
+/**
+ * 行内注释4：真发票 —— GET /invoices 列表 + POST /invoices 申请。
+ */
 export function InvoicesPanel() {
   const { push } = useToast();
   const [open, setOpen] = useState(false);
@@ -119,27 +214,71 @@ export function InvoicesPanel() {
   const [title, setTitle] = useState("");
   const [taxNo, setTaxNo] = useState("");
   const [amount, setAmount] = useState("500");
-  // 行内注释：发票 = 申请单 + 后台人工开票（P2 降级预案：不接第三方自动开票）
-  const [requests] = useState([{ id: "inv_001", title: "某某品牌有限公司", amt: 500, status: "开票中", time: "2026-10-29" }]);
+  const [submitting, setSubmitting] = useState(false);
+  const [requests, setRequests] = useState<InvoiceItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const taxOk = titleType === "个人" || /^[A-Z0-9]{15,20}$/.test(taxNo.replace(/\s/g, ""));
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await listInvoices({ page: 1, pageSize: 50 });
+      setRequests(res.data ?? []);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "加载发票失败";
+      push({ tone: "warning", title: "加载失败", description: msg });
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      await createInvoice({
+        title_type: titleType as "个人" | "企业",
+        title: title.trim(),
+        tax_no: taxNo.trim(),
+        amount: Number(amount) || 0,
+      });
+      setOpen(false);
+      setTitle("");
+      setTaxNo("");
+      push({ tone: "success", title: "申请已提交", description: "后台人工审核后开具" });
+      void load();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "提交失败";
+      push({ tone: "danger", title: "提交失败", description: msg });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><Receipt className="size-4 text-accent" aria-hidden />发票申请</CardTitle><Button variant="secondary" size="sm" onClick={() => setOpen(true)}><Plus className="size-3.5" aria-hidden />申请开票</Button></CardHeader>
         <CardBody>
-          {requests.length === 0 ? (
+          {loading ? (
+            <p className="py-6 text-center text-xs text-fg-subtle">加载中…</p>
+          ) : requests.length === 0 ? (
             <EmptyState icon={<Receipt className="size-5" />} title="暂无发票" description="充值后可申请开票，后台人工审核后开具" />
           ) : (
             <Table>
               <thead><tr><Th>抬头</Th><Th>金额</Th><Th>状态</Th><Th>申请时间</Th></tr></thead>
               <tbody>
-                {requests.map((r) => (<tr key={r.id}><Td>{r.title}</Td><Td className="tabular">¥{r.amt}</Td><Td><Badge tone="warning">{r.status}</Badge></Td><Td className="tabular text-fg-subtle">{r.time}</Td></tr>))}
+                {requests.map((r) => (<tr key={r.id}><Td>{r.title}</Td><Td className="tabular">¥{r.amount}</Td><Td><Badge tone="warning">{r.status}</Badge></Td><Td className="tabular text-fg-subtle">{r.created_at}</Td></tr>))}
               </tbody>
             </Table>
           )}
         </CardBody>
       </Card>
-      <Modal open={open} onClose={() => setOpen(false)} title="申请开票" description="人工开票，1~3 个工作日" footer={<><Button variant="secondary" onClick={() => setOpen(false)}>取消</Button><Button disabled={!title.trim() || !taxOk} onClick={() => { setOpen(false); push({ tone: "success", title: "申请已提交", description: "后台人工审核后开具" }); }}>提交申请</Button></>}>
+      <Modal open={open} onClose={() => setOpen(false)} title="申请开票" description="人工开票，1~3 个工作日" footer={<><Button variant="secondary" onClick={() => setOpen(false)}>取消</Button><Button disabled={!title.trim() || !taxOk || submitting} onClick={() => void submit()}>{submitting ? "提交中…" : "提交申请"}</Button></>}>
         <div className="space-y-3">
           <div><Label className="mb-1.5 block">抬头类型</Label><div className="flex gap-1.5">{["个人", "企业"].map((t) => (<button key={t} type="button" onClick={() => setTitleType(t)} aria-pressed={titleType === t} className={cn("flex-1 rounded-xs border px-2 py-2 text-xs", titleType === t ? "border-accent bg-accent-soft/40 text-fg" : "border-line bg-surface-2 text-fg-muted")}>{t}</button>))}</div></div>
           <div><Label htmlFor="inv-title" className="mb-1.5 block">发票抬头</Label><Input id="inv-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={titleType === "个人" ? "姓名" : "公司全称"} /></div>
@@ -151,6 +290,10 @@ export function InvoicesPanel() {
   );
 }
 
+/**
+ * 行内注释5：API 密钥 —— 后端尚无密钥表（待建表项 A 系列外的新增项），
+ *             这里保留本地生成逻辑，并明确标注「仅本地，未接入后端」。
+ */
 export function ApiKeysPanel() {
   const { push } = useToast();
   const [showKey, setShowKey] = useState(false);

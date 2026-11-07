@@ -18,6 +18,9 @@ import { AssetPickerModal, type AssetItem } from "@/components/features/AssetPic
 import { MentionEditor } from "@/components/features/MentionEditor";
 import { useToast } from "@/components/features/ToastHost";
 import { cn } from "@/lib/cn";
+import { submitEcommerceSet } from "@/lib/backend/tools";
+import { waitTask, type TaskRecord } from "@/lib/backend/tasks";
+import { ApiError } from "@/lib/api";
 
 /* ===== 85191 模块常量（原站逐字） ===== */
 const MODULE_PURPOSES = [
@@ -141,19 +144,49 @@ export default function EcommerceImageSetPage() {
   };
   const err = validate();
 
-  const gen = () => {
+  const gen = async () => {
     if (err) {
       push({ tone: "warning", title: err });
       return;
     }
     setBusy(true);
-    push({ tone: "success", title: "已提交", description: `已选 ${selCount} 类，共 ${total} 张 · ${model}` });
-    setTimeout(() => {
-      setResults(EXAMPLES.slice(0, total).map((e) => e.src));
+    try {
+      const productAssetIds = (slotAssets.product ?? []).map((a) => a.id);
+      const batch = await submitEcommerceSet({
+        product_asset_ids: productAssetIds,
+        lang,
+        ratio,
+        model,
+        resolution,
+        format,
+        count: total,
+      });
+      push({
+        tone: "success",
+        title: "已提交",
+        description: `批次 ${batch.id} · 共 ${batch.item_count} 张`,
+      });
+      // 行内注释7：逐个等终态，把每张的真实结果 URL 收集起来。
+      const urls: string[] = [];
+      for (const tid of batch.task_ids ?? []) {
+        const done: TaskRecord = await waitTask(tid);
+        if (done.status === "succeeded") {
+          urls.push(...(done.result?.result_urls ?? []));
+        }
+      }
+      if (urls.length > 0) {
+        setResults(urls);
+        setTab("preview");
+        push({ tone: "success", title: "生成完成", description: `${urls.length} 张商详图已就绪` });
+      } else {
+        push({ tone: "warning", title: "生成未产出结果", description: "请在任务队列查看失败原因" });
+      }
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "提交失败，请稍后重试";
+      push({ tone: "danger", title: "提交失败", description: msg });
+    } finally {
       setBusy(false);
-      setTab("preview");
-      push({ tone: "success", title: "生成完成", description: `${total} 张商详图已就绪` });
-    }, 1600);
+    }
   };
 
   return (

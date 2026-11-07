@@ -74,7 +74,8 @@ public final class Catalog {
             price("stone.effect.4k", "stone-effect", "石材空间效果图", "4K 高精版", 12, 0.88, 1.44, "LC Image 2.5 Pro"),
             price("stone.effect.set6", "stone-effect", "石材批量出图", "6 张套 2K", 45, 0.92, 3.60, "LC Image 2.5 Pro"),
             price("factory-video.60s", "stone-video", "厂家介绍视频", "60 秒标准版", 320, 0.70, 96.00, "组合链路"),
-            price("factory-video.60s.light", "stone-video", "厂家介绍视频", "60 秒轻量版", 165, 0.71, 47.85, "组合链路"));
+            price("factory-video.60s.light", "stone-video", "厂家介绍视频", "60 秒轻量版", 165, 0.71, 47.85, "组合链路"),
+            price("doubao-tts-2.0", "tts", "语音合成", "默认音色", 2, 0.60, 0.80, "豆包语音合成 2.0"));
 
     /** 充值套餐（前端 RECHARGE_PACKAGES，6 档）。 */
     public static final List<Map<String, Object>> RECHARGE_PACKAGES = List.of(

@@ -21,6 +21,8 @@ import org.springframework.stereotype.Service;
 public class DiscoverService {
 
     public static final String T_ITEMS = "discover_items";
+    /** 行内注释2.3：审核队列表 —— 发布即入队，供后台「内容审核」页处理。 */
+    public static final String T_REVIEW = "review_queue";
 
     private final DataStore store;
 
@@ -40,6 +42,8 @@ public class DiscoverService {
         }
         int size = limit <= 0 ? 20 : Math.min(limit, 50);
         List<Map<String, Object>> all = store.listWhere(T_ITEMS, r -> true).stream()
+                // 行内注释4.1：只展示审核通过的作品 —— 未审核内容不得外显。
+                .filter(r -> "approved".equals(Rows.str(r, "review_status", "approved")))
                 .filter(r -> filter == null || filter.isBlank() || "全部".equals(filter)
                         || filter.equals(Rows.str(r, "capability")))
                 .filter(r -> query == null || query.isBlank() || Rows.str(r, "title", "").contains(query))
@@ -66,9 +70,11 @@ public class DiscoverService {
     public Map<String, Object> publish(String userId, String title, String coverUrl, String capability,
             int points, List<String> tags, String toolHref, Map<String, Object> paramsSnapshot) {
         String id = "dsc_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+        // 行内注释2：标题兜底 —— 前端允许留空，这里给个可展示的默认值。
+        String safeTitle = title == null || title.isBlank() ? "未命名作品" : title;
         Map<String, Object> item = Rows.row(
                 "id", id, "user_id", userId,
-                "title", title == null ? "未命名作品" : title,
+                "title", safeTitle,
                 "cover_url", coverUrl == null ? "" : coverUrl,
                 "capability", capability == null ? "image" : capability,
                 "points", points,
@@ -76,8 +82,21 @@ public class DiscoverService {
                 "tool_href", toolHref == null ? "/toolbox/image-generation" : toolHref,
                 "params_snapshot", paramsSnapshot == null ? Map.of() : paramsSnapshot,
                 "likes", 0,
+                // 行内注释2.1：新发布一律待审 —— 公开流只展示审核通过的作品。
+                "review_status", "pending",
                 "created_at", Times.full(Times.now()));
         store.put(T_ITEMS, id, item);
+        // 行内注释2.2：同时推入审核队列 —— 后台审核页才有数据可处理，
+        //              审核通过后由 AdminService.review 回写 review_status 并进公共素材库。
+        store.put(T_REVIEW, "rv_" + id, Rows.row(
+                "id", "rv_" + id,
+                "item_id", id,
+                "title", safeTitle,
+                "user", userId == null ? "" : userId,
+                "thumb", coverUrl == null ? "" : coverUrl,
+                "status", "pending",
+                "reason", "",
+                "created_at", Times.full(Times.now())));
         return view(item);
     }
 

@@ -36,7 +36,7 @@ public class RechargeService {
     // 行内注释4：建单 —— Idempotency-Key 必带，重复返回原单。
     public Map<String, Object> createOrder(String userId, String packageCode, String payMethod) {
         Map<String, Object> pkg = Catalog.RECHARGE_PACKAGES.stream()
-                .filter(p -> Rows.str(p, "code").equals(packageCode))
+                .filter(p -> Rows.strEq(p, "code", packageCode))
                 .findFirst().orElse(null);
         if (pkg == null) {
             throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("message", "套餐不存在", "package_code", packageCode));
@@ -64,7 +64,7 @@ public class RechargeService {
 
     // 行内注释5：订单列表 —— 按用户隔离，倒序分页。
     public List<Map<String, Object>> listOrders(String userId, int page, int pageSize) {
-        List<Map<String, Object>> all = store.listWhere(T_ORDERS, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        List<Map<String, Object>> all = store.listWhere(T_ORDERS, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .toList();
         int from = Math.min((page - 1) * pageSize, all.size());
@@ -78,7 +78,7 @@ public class RechargeService {
 
     public Map<String, Object> getOrder(String userId, String orderNo) {
         Map<String, Object> order = store.find(T_ORDERS, orderNo).orElse(null);
-        if (order == null || !Rows.str(order, "user_id").equals(userId)) {
+        if (order == null || !Rows.strEq(order, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         return view(order);
@@ -90,7 +90,7 @@ public class RechargeService {
         if (order == null) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
-        if (!Rows.str(order, "user_id").equals(userId)) {
+        if (!Rows.strEq(order, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         if ("paid".equals(Rows.str(order, "status"))) {
@@ -113,7 +113,7 @@ public class RechargeService {
     // 行内注释7：关闭订单 —— 未支付可关闭。
     public void closeOrder(String userId, String orderNo) {
         Map<String, Object> order = store.find(T_ORDERS, orderNo).orElse(null);
-        if (order == null || !Rows.str(order, "user_id").equals(userId)) {
+        if (order == null || !Rows.strEq(order, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         if ("pending".equals(Rows.str(order, "status"))) {
@@ -126,16 +126,29 @@ public class RechargeService {
         return Math.max(0, credits - amount);
     }
 
+    /**
+     * 订单视图 —— 字段与前端 RechargeOrder 接口一一对应。
+     * 行内注释8.1：status 必须是原始码（pending/paid/closed/refunded），
+     *              中文标签放 status_label —— 前端契约里 status 是用来做状态判断的，
+     *              若这里塞中文，前端的 `status === "paid"` 永远不成立。
+     * 行内注释8.2：order_no 与 no 同时给出 —— 前端历史代码用 no，新代码用 order_no。
+     */
     private Map<String, Object> view(Map<String, Object> o) {
+        String no = Rows.str(o, "no", Rows.str(o, "id", ""));
+        String code = Rows.str(o, "status", "");
         return Rows.row(
-                "no", Rows.str(o, "no"),
+                "id", Rows.str(o, "id", no),
+                "order_no", no,
+                "no", no,
+                "package_code", Rows.str(o, "package_code", ""),
                 "package_name", Rows.str(o, "package_name", ""),
                 "amount", Rows.num(o, "amount"),
                 "credits", Rows.num(o, "credits"),
                 "bonus", Rows.num(o, "bonus"),
                 "pay_method", Rows.str(o, "pay_method", ""),
-                "status", statusLabel(Rows.str(o, "status")),
-                "status_code", Rows.str(o, "status"),
+                "status", code,
+                "status_code", code,
+                "status_label", statusLabel(code),
                 "created_at", Rows.str(o, "created_at"));
     }
 

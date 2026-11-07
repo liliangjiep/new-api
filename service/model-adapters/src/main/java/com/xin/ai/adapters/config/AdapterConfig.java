@@ -27,10 +27,15 @@ public class AdapterConfig {
 
     /**
      * 多中转站回退路由 —— 熔断、sticky 优先、错误分类回退都在这里。
+     * 行内注释2：熔断状态通过 CircuitStore 落库（model_channels.circuit_state）。
      */
     @Bean
-    public ChannelRouter channelRouter() {
-        return new ChannelRouter();
+    public ChannelRouter channelRouter(
+            @org.springframework.beans.factory.annotation.Qualifier("relayCircuitStore")
+            ChannelRouter.CircuitStore circuitStore) {
+        ChannelRouter router = new ChannelRouter();
+        router.setCircuitStore(circuitStore);
+        return router;
     }
 
     @Bean

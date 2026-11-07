@@ -45,4 +45,13 @@ public class DomainConfig {
     public MemStore legacyMemStore() {
         return new MemStore();
     }
+
+    /**
+     * 任务事件总线 —— SSE 进度推送的发布订阅通道。
+     * 行内注释4：独立成 Bean 便于将来替换为 Redis Pub/Sub（多实例部署时进程内广播不够）。
+     */
+    @Bean
+    public com.xin.ai.domain.service.TaskEventBus taskEventBus() {
+        return new com.xin.ai.domain.service.TaskEventBus();
+    }
 }

@@ -67,7 +67,8 @@ public class AuthController extends BaseController {
     /** 会话列表。 */
     @GetMapping("/auth/sessions")
     public ApiResponse<List<Map<String, Object>>> sessions(@CurrentUser AuthContext.Principal user) {
-        return list(authService.listSessions(user.userId(), ""));
+        // 行内注释2：传入当前会话 ID —— 否则列表里没法标出「当前会话」。
+        return list(authService.listSessions(user.userId(), user.sessionId()));
     }
 
     /** 下线指定会话。 */

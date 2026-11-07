@@ -16,7 +16,19 @@ public final class AuthContext {
             String phone,
             String role,
             int loginVersion,
-            Map<String, Object> claims) {}
+            Map<String, Object> claims) {
+        /**
+         * 行内注释1.1：当前会话 ID —— 从 JWT 的 sid 载荷取。
+         *             「登录设备」列表要用它标出「当前会话」，没有它就全都显示成非当前。
+         */
+        public String sessionId() {
+            if (claims == null) {
+                return "";
+            }
+            Object sid = claims.get("sid");
+            return sid == null ? "" : String.valueOf(sid);
+        }
+    }
 
     private static final ThreadLocal<Principal> HOLDER = new ThreadLocal<>();
 

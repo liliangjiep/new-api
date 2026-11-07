@@ -9,6 +9,9 @@ import {
 } from "@/components/features/BenchWorkspace";
 import { AssetPickerModal, type AssetItem } from "@/components/features/AssetPickerModal";
 import { useToast } from "@/components/features/ToastHost";
+import { submitViralRemix } from "@/lib/backend/tools";
+import { waitTask } from "@/lib/backend/tasks";
+import { ApiError } from "@/lib/api";
 
 /**
  * 原站 /toolbox/hot-video-remix「爆款裂变」（2026-10-30 实测逐字复刻）
@@ -53,8 +56,12 @@ const MAX_VIDEOS = 3;
 export function HotVideoRemixTool() {
   const { push } = useToast();
   const [videos, setVideos] = useState<string[]>([]);
+  /** 行内注释11：源视频的资产 ID —— 后端要 ast_* ID，名字只是展示用。 */
+  const [videoAssetIds, setVideoAssetIds] = useState<string[]>([]);
   const [segments, setSegments] = useState<string[]>([]);
   const [audio, setAudio] = useState<string | null>(null);
+  /** 行内注释11.1：成片音频的资产 ID。 */
+  const [audioAssetId, setAudioAssetId] = useState<string | null>(null);
   const [videoPickerOpen, setVideoPickerOpen] = useState(false);
   const [audioPickerOpen, setAudioPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -67,16 +74,44 @@ export function HotVideoRemixTool() {
     setSegments(["片段 1", "片段 2", "片段 3"]);
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (videos.length === 0) {
       push({ tone: "warning", title: "请先上传视频" });
       return;
     }
+    if (videoAssetIds.length === 0) {
+      push({ tone: "warning", title: "请先从资产库选择源视频" });
+      return;
+    }
     setBusy(true);
-    setTimeout(() => {
+    try {
+      // 行内注释12：裂变逐条提交 —— 每条源视频一个爆款混剪任务。
+      for (const assetId of videoAssetIds) {
+        const task = await submitViralRemix({
+          source_video_asset_id: assetId,
+          strategy: segments.length > 0 ? segments.join(",") : "auto",
+        });
+        const done = await waitTask(task.id);
+        if (done.status === "succeeded") {
+          push({
+            tone: "success",
+            title: "裂变完成",
+            description: done.result?.result_urls?.[0] ?? "",
+          });
+        } else {
+          push({
+            tone: "warning",
+            title: "裂变失败",
+            description: done.fail_reason || done.error_code || "上游未返回结果",
+          });
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "提交失败，请稍后重试";
+      push({ tone: "danger", title: "提交失败", description: msg });
+    } finally {
       setBusy(false);
-      push({ tone: "success", title: "已提交裂变", description: `${videos.length} 条源视频` });
-    }, 1200);
+    }
   };
 
   return (
@@ -146,7 +181,10 @@ export function HotVideoRemixTool() {
                           <button
                             type="button"
                             aria-label={`移除 ${v}`}
-                            onClick={() => setVideos((p) => p.filter((_, j) => j !== i))}
+                            onClick={() => {
+                              setVideos((p) => p.filter((_, j) => j !== i));
+                              setVideoAssetIds((p) => p.filter((_, j) => j !== i));
+                            }}
                             className="text-muted transition hover:text-foreground"
                           >
                             <svg
@@ -434,6 +472,7 @@ export function HotVideoRemixTool() {
       onConfirm={(assets: AssetItem[]) => {
         if (assets.length === 0) return;
         setVideos((p) => [...p, ...assets.map((a) => a.name)].slice(0, MAX_VIDEOS));
+        setVideoAssetIds((p) => [...p, ...assets.map((a) => a.id)].slice(0, MAX_VIDEOS));
       }}
     />
     <AssetPickerModal
@@ -444,7 +483,10 @@ export function HotVideoRemixTool() {
       maxSelect={1}
       onClose={() => setAudioPickerOpen(false)}
       onConfirm={(assets: AssetItem[]) => {
-        if (assets[0]) setAudio(assets[0].name);
+        if (assets[0]) {
+          setAudio(assets[0].name);
+          setAudioAssetId(assets[0].id);
+        }
       }}
     />
     </>

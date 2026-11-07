@@ -24,6 +24,10 @@ public class AssetService {
     public static final String T_ASSETS = "assets";
     public static final String T_GROUPS = "asset_groups";
     public static final String T_POLICIES = "upload_policies";
+    /** 行内注释9.9：公共素材库 —— 与 AdminService.T_PUBLIC_ASSETS 同表（public_materials）。 */
+    public static final String T_PUBLIC_ASSETS = "public_materials";
+    /** 行内注释9.10：导出包表 —— 记录一次导出的清单，供下载接口现拼 zip。 */
+    public static final String T_EXPORTS = "asset_exports";
 
     private static final int POLICY_TTL_SECONDS = 300;
     private static final long MAX_IMAGE = 20L * 1024 * 1024;
@@ -76,7 +80,7 @@ public class AssetService {
     // 行内注释5：确认上传 —— 校验 policy 存在且未过期，写入资产行（此时资产才对用户可见）。
     public Map<String, Object> complete(String userId, String assetId, long size, String etag) {
         Map<String, Object> policy = store.find(T_POLICIES, assetId).orElse(null);
-        if (policy == null || !Rows.str(policy, "user_id").equals(userId)) {
+        if (policy == null || !Rows.strEq(policy, "user_id", userId)) {
             throw new BizException(ErrorCode.ASSET_NOT_FOUND);
         }
         if (Times.parse(Rows.str(policy, "expire_at")).isBefore(Times.now())) {
@@ -106,7 +110,7 @@ public class AssetService {
     // 行内注释6：资产列表 —— kind × source 两维筛选 + 文件名关键字 + 分组过滤。
     public List<Map<String, Object>> list(String userId, String kind, String group, String source,
             String query, int page, int pageSize) {
-        List<Map<String, Object>> all = store.listWhere(T_ASSETS, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        List<Map<String, Object>> all = store.listWhere(T_ASSETS, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .filter(r -> kind == null || kind.isBlank() || kind.equals(Rows.str(r, "kind")))
                 .filter(r -> group == null || group.isBlank() || group.equals(Rows.str(r, "group")))
                 .filter(r -> source == null || source.isBlank() || "all".equals(source) || source.equals(Rows.str(r, "source")))
@@ -151,7 +155,7 @@ public class AssetService {
         }
         int n = 0;
         for (String id : ids) {
-            if (store.find(T_ASSETS, id).map(a -> Rows.str(a, "user_id").equals(userId)).orElse(false)) {
+            if (store.find(T_ASSETS, id).map(a -> Rows.strEq(a, "user_id", userId)).orElse(false)) {
                 store.delete(T_ASSETS, id);
                 n++;
             }
@@ -161,7 +165,7 @@ public class AssetService {
 
     // 行内注释9：分组 CRUD —— assets 页的分组维度。
     public List<Map<String, Object>> listGroups(String userId) {
-        List<Map<String, Object>> groups = store.listWhere(T_GROUPS, r -> Rows.str(r, "user_id").equals(userId));
+        List<Map<String, Object>> groups = store.listWhere(T_GROUPS, r -> Rows.strEq(r, "user_id", userId));
         if (groups.isEmpty()) {
             // 默认给四个分组，与前端 mock 的「产品素材/成片归档/参考图/配音」一致
             for (String g : List.of("产品素材", "成片归档", "参考图", "配音")) {
@@ -169,12 +173,12 @@ public class AssetService {
                 store.put(T_GROUPS, id, Rows.row("id", id, "user_id", userId, "name", g,
                         "created_at", Times.full(Times.now())));
             }
-            groups = store.listWhere(T_GROUPS, r -> Rows.str(r, "user_id").equals(userId));
+            groups = store.listWhere(T_GROUPS, r -> Rows.strEq(r, "user_id", userId));
         }
         return groups.stream().map(g -> Rows.row(
                 "id", Rows.str(g, "id"), "name", Rows.str(g, "name"),
                 "count", store.countWhere(T_ASSETS,
-                        r -> Rows.str(r, "user_id").equals(userId) && Rows.str(r, "group").equals(Rows.str(g, "name"))))).toList();
+                        r -> Rows.strEq(r, "user_id", userId) && Rows.strEq(r, "group", Rows.str(g, "name"))))).toList();
     }
 
     public Map<String, Object> createGroup(String userId, String name) {
@@ -190,10 +194,68 @@ public class AssetService {
 
     public void deleteGroup(String userId, String groupId) {
         Map<String, Object> g = store.find(T_GROUPS, groupId).orElse(null);
-        if (g == null || !Rows.str(g, "user_id").equals(userId)) {
+        if (g == null || !Rows.strEq(g, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         store.delete(T_GROUPS, groupId);
+    }
+
+    // ---------------- 导出包 ----------------
+
+    /**
+     * 生成导出包 —— 本地无对象存储，包内放资产清单（manifest.json）与说明。
+     * 行内注释9.1：清单记录每个资产的 id/名称/类型/URL，
+     *             接入对象存储后改为把真实文件字节写进 zip。
+     * 行内注释9.2：只导出本人资产 —— 越权的 id 直接跳过，不报错也不泄露存在性。
+     */
+    public Map<String, Object> exportAssets(String userId, List<String> ids, String label) {
+        List<Map<String, Object>> entries = new ArrayList<>();
+        if (ids != null) {
+            for (String id : ids) {
+                Map<String, Object> a = store.find(T_ASSETS, id).orElse(null);
+                if (a != null && Rows.strEq(a, "user_id", userId)) {
+                    entries.add(Rows.row(
+                            "id", Rows.str(a, "id"),
+                            "name", Rows.str(a, "name", ""),
+                            "kind", Rows.str(a, "kind", "image"),
+                            "size", Rows.num(a, "size"),
+                            "url", Rows.str(a, "url", "")));
+                }
+            }
+        }
+        String safeLabel = label == null || label.isBlank() ? "导出" : label.trim();
+        String exportId = "exp_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        // 行内注释9.3：文件名带时间戳，避免同名导出互相覆盖。
+        String filename = safeLabel + "-" + Times.full(Times.now()).replace(":", "").replace(" ", "_") + ".zip";
+        Map<String, Object> manifest = Rows.row(
+                "id", exportId,
+                "user_id", userId,
+                "filename", filename,
+                "label", safeLabel,
+                "count", entries.size(),
+                "entries", entries,
+                "created_at", Times.full(Times.now()));
+        store.put(T_EXPORTS, exportId, manifest);
+        return Rows.row(
+                "id", exportId,
+                "filename", filename,
+                "label", safeLabel,
+                "count", entries.size(),
+                "entries", entries,
+                "created_at", Rows.str(manifest, "created_at"),
+                "download_url", "/api/v1/assets/exports/" + exportId + "/download");
+    }
+
+    /**
+     * 取导出包清单 —— 越权或已过期一律 404。
+     * 行内注释9.4：导出包是一次性的，下载接口按 id 查回来现拼 zip。
+     */
+    public Map<String, Object> findExport(String userId, String exportId) {
+        Map<String, Object> e = store.find(T_EXPORTS, exportId).orElse(null);
+        if (e == null || !Rows.strEq(e, "user_id", userId)) {
+            throw new BizException(ErrorCode.COMMON_NOT_FOUND, Map.of("message", "导出包不存在或已过期"));
+        }
+        return e;
     }
 
     // 行内注释10：视图装配 —— 字段名与前端契约一致。
@@ -214,10 +276,27 @@ public class AssetService {
 
     private Map<String, Object> requireOwned(String userId, String assetId) {
         Map<String, Object> a = store.find(T_ASSETS, assetId).orElse(null);
-        if (a == null || !Rows.str(a, "user_id").equals(userId)) {
+        if (a == null || !Rows.strEq(a, "user_id", userId)) {
             throw new BizException(ErrorCode.ASSET_NOT_FOUND);
         }
         return a;
+    }
+
+    /**
+     * 公共素材库列表 —— 面向全体用户（免登录）。
+     * 行内注释11.9：scope 过滤是「授权范围」维度（全员 / 行业），
+     *              不是用户归属维度 —— 数据源是审核通过后由 AdminService 写入的 public_materials。
+     */
+    public List<Map<String, Object>> listPublicAssets(String scope) {
+        return store.listWhere(T_PUBLIC_ASSETS, r -> true).stream()
+                .filter(r -> scope == null || scope.isBlank() || "全部".equals(scope)
+                        || scope.equals(Rows.str(r, "scope")))
+                .map(a -> Rows.row(
+                        "id", Rows.str(a, "id"),
+                        "name", Rows.str(a, "name", ""),
+                        "scope", Rows.str(a, "scope", "全员"),
+                        "thumb", Rows.str(a, "thumb", "")))
+                .toList();
     }
 
     // 行内注释11：kind 推断 —— 未显式指定时按 content_type 与文件名后缀判定。

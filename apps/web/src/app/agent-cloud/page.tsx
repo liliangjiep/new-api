@@ -1,12 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { WorkspaceShell } from "@/components/features/WorkspaceShell";
 import { useToast } from "@/components/features/ToastHost";
 import { Button, Textarea } from "@/components/ui/primitives";
 import { Badge } from "@/components/ui/surfaces";
 import { Send, Square, RotateCcw, Plus, Paperclip, Sparkles, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { chatStream, listSessions, listSkills, type AgentSession, type AgentSkill } from "@/lib/backend/agent";
+import { ApiError } from "@/lib/api";
 
 const AGENT_PINNED = {
   id: "agent-pinned",
@@ -22,7 +24,8 @@ interface Msg {
 }
 
 const PRESETS = ["写一条探店口播文案", "把这款面膜卖点转成 30s 脚本", "生成 3 条同城引流标题", "分析这条爆款为什么火"];
-const SKILLS = ["智能编导", "视频生成", "图片生成", "字幕擦除", "画质增强", "厂家介绍视频"];
+/** 行内注释1：技能列表来自后端 GET /agent/skills —— 未加载前先用这份兜底名。 */
+const FALLBACK_SKILLS = ["智能编导", "视频生成", "图片生成", "字幕擦除", "画质增强", "厂家介绍视频"];
 
 export default function AgentCloudPage() {
   const { push } = useToast();
@@ -32,33 +35,85 @@ export default function AgentCloudPage() {
   const [skill, setSkill] = useState<string | null>(null);
   const [skillOpen, setSkillOpen] = useState(false);
   const [model, setModel] = useState("Seedance 2.0");
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** 行内注释2：会话 ID —— 后端 SSE 的 meta 事件会回传，之后的对话都挂在同一个会话上。 */
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [skills, setSkills] = useState<string[]>(FALLBACK_SKILLS);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const send = (text?: string) => {
-    const v = (text ?? input).trim();
-    if (!v || streaming) return;
-    const um: Msg = { id: `u_${Date.now()}`, role: "user", text: v };
-    setMsgs((p) => [...p, um]);
-    setInput("");
-    setStreaming(true);
-    const full = `收到：${v}\n\n这是 Agent 演示回复（mock 流式输出）。${skill ? `已挂载技能「${skill}」` : "未挂载技能"} · 模型 ${model}。\n\n下一步可：1）追问细节 2）换技能重跑 3）转到对应工具页精调。`;
-    const am: Msg = { id: `a_${Date.now()}`, role: "assistant", text: "" };
-    setMsgs((p) => [...p, am]);
-    let i = 0;
-    if (timer.current) clearInterval(timer.current);
-    timer.current = setInterval(() => {
-      i += 6;
-      const slice = full.slice(0, i);
-      setMsgs((p) => p.map((m) => (m.id === am.id ? { ...m, text: slice } : m)));
-      if (i >= full.length) {
-        if (timer.current) clearInterval(timer.current);
-        setStreaming(false);
+  /**
+   * 行内注释3：加载历史会话与技能 —— 刷新页面不丢对话记录。
+   */
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [ss, sk] = await Promise.all([listSessions(), listSkills()]);
+        setSessions(ss ?? []);
+        if (sk && sk.length > 0) {
+          setSkills(sk.map((s) => s.label ?? s.id).filter(Boolean));
+        }
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : "加载失败";
+        push({ tone: "warning", title: "加载失败", description: msg });
       }
-    }, 40);
-  };
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const send = useCallback(
+    async (text?: string) => {
+      const v = (text ?? input).trim();
+      if (!v || streaming) return;
+      const um: Msg = { id: `u_${Date.now()}`, role: "user", text: v };
+      const am: Msg = { id: `a_${Date.now()}`, role: "assistant", text: "" };
+      setMsgs((p) => [...p, um, am]);
+      setInput("");
+      setStreaming(true);
+
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+
+      try {
+        // 行内注释4：真 SSE —— 后端逐段推 token，前端逐段追加。
+        await chatStream(
+          { session_id: sessionId ?? "", message: v, skill: skill ?? "", model },
+          {
+            signal: ctrl.signal,
+            onToken: (chunk) => {
+              setMsgs((p) => p.map((m) => (m.id === am.id ? { ...m, text: m.text + chunk } : m)));
+            },
+            onMeta: (sid) => {
+              setSessionId(sid);
+              // 行内注释4.1：会话建好后刷新侧栏列表。
+              void listSessions().then(setSessions).catch(() => undefined);
+            },
+          },
+        );
+        // 行内注释4.2：没有收到任何内容 → 明确提示，不要留一条空白消息。
+        setMsgs((p) => {
+          const cur = p.find((m) => m.id === am.id);
+          if (cur && !cur.text.trim()) {
+            return p.map((m) => (m.id === am.id ? { ...m, text: "（后端未返回内容）" } : m));
+          }
+          return p;
+        });
+      } catch (e) {
+        if (!ctrl.signal.aborted) {
+          const msg = e instanceof ApiError ? e.message : (e as Error)?.message ?? "对话失败";
+          push({ tone: "danger", title: "对话失败", description: msg });
+          setMsgs((p) => p.filter((m) => m.id !== am.id));
+        }
+      } finally {
+        setStreaming(false);
+        abortRef.current = null;
+      }
+    },
+    [input, streaming, sessionId, skill, model, push],
+  );
 
   const stop = () => {
-    if (timer.current) clearInterval(timer.current);
+    abortRef.current?.abort();
+    abortRef.current = null;
     setStreaming(false);
     push({ tone: "neutral", title: "已停止生成" });
   };
@@ -69,16 +124,31 @@ export default function AgentCloudPage() {
       push({ tone: "warning", title: "还没有提问", description: "先输入一句话试试" });
       return;
     }
-    setMsgs((p) => p.filter((m) => !(m.role === "assistant" && m.id === p[p.length - 1]?.id)));
-    send(lastUser.text);
+    setMsgs((p) => {
+      const last = p[p.length - 1];
+      if (last && last.role === "assistant") {
+        return p.slice(0, -1);
+      }
+      return p;
+    });
+    void send(lastUser.text);
   };
 
   const newChat = () => {
-    if (timer.current) clearInterval(timer.current);
+    abortRef.current?.abort();
     setStreaming(false);
     setMsgs([]);
+    setSessionId(null);
     setInput("");
-    push({ tone: "neutral", title: "已新建对话（演示）" });
+    push({ tone: "neutral", title: "已新建对话" });
+  };
+
+  const openSession = (s: AgentSession) => {
+    abortRef.current?.abort();
+    setStreaming(false);
+    setSessionId(s.id);
+    setMsgs([]);
+    push({ tone: "neutral", title: "已切换会话", description: s.title });
   };
 
   return (
@@ -101,7 +171,7 @@ export default function AgentCloudPage() {
             {skillOpen ? (
               <div className="absolute left-0 top-9 z-50 w-52 rounded-xl border border-line bg-surface p-1.5 shadow-xl">
                 <button type="button" onClick={() => { setSkill(null); setSkillOpen(false); }} className="flex h-8 w-full items-center rounded-lg px-2 text-xs hover:bg-surface-2">不挂载</button>
-                {SKILLS.map((s) => (
+                {skills.map((s) => (
                   <button key={s} type="button" onClick={() => { setSkill(s); setSkillOpen(false); push({ tone: "success", title: `已挂载 ${s}` }); }} className={cn("flex h-8 w-full items-center justify-between rounded-lg px-2 text-xs hover:bg-surface-2", skill === s && "bg-accent-soft/40")}>
                     {s}{skill === s ? <span className="text-accent">✓</span> : null}
                   </button>
@@ -114,6 +184,28 @@ export default function AgentCloudPage() {
             <option>Doubao Seed 2.0 Lite</option>
             <option>GLM 5.3 Flash</option>
           </select>
+          {sessions.length > 0 ? (
+            <select
+              value={sessionId ?? ""}
+              onChange={(e) => {
+                const sid = e.target.value;
+                if (!sid) {
+                  setSessionId(null);
+                  setMsgs([]);
+                } else {
+                  const s = sessions.find((x) => x.id === sid);
+                  if (s) openSession(s);
+                }
+              }}
+              aria-label="历史会话"
+              className="h-8 max-w-[160px] rounded-lg border border-line bg-surface px-2 text-xs"
+            >
+              <option value="">当前新对话</option>
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id}>{s.title}</option>
+              ))}
+            </select>
+          ) : null}
           <span className="ml-auto flex items-center gap-2">
             {skill ? <Badge tone="accent">{skill}</Badge> : <Badge tone="neutral">通用对话</Badge>}
             {msgs.length > 0 ? <Button variant="ghost" size="sm" onClick={regenerate} disabled={streaming}><RotateCcw className="size-3.5" aria-hidden />重跑</Button> : null}
@@ -125,10 +217,10 @@ export default function AgentCloudPage() {
           {msgs.length === 0 ? (
             <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center text-center">
               <p className="text-lg font-semibold">我是你的 AI 创作助手</p>
-              <p className="mt-1.5 text-xs text-muted">挂载技能后可直接调用工具链 · 所有输出均为前端演示，无需后端</p>
+              <p className="mt-1.5 text-xs text-muted">挂载技能后可直接调用工具链 · 对话走后端 SSE 流式接口</p>
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 {PRESETS.map((p) => (
-                  <button key={p} type="button" onClick={() => send(p)} className="rounded-full border border-line bg-surface px-3.5 py-2 text-xs hover:border-accent hover:text-accent-deep">{p}</button>
+                  <button key={p} type="button" onClick={() => void send(p)} className="rounded-full border border-line bg-surface px-3.5 py-2 text-xs hover:border-accent hover:text-accent-deep">{p}</button>
                 ))}
               </div>
             </div>
@@ -151,19 +243,18 @@ export default function AgentCloudPage() {
           <div className="mx-auto max-w-2xl">
             <div className="rounded-2xl border border-line bg-surface p-2 shadow-sm focus-within:border-accent">
               <Textarea rows={2} value={input} onChange={(e) => setInput(e.target.value)} placeholder="输入任务，按 Enter 发送，Shift+Enter 换行" aria-label="Agent 输入"
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} className="border-0 bg-transparent !ring-0" />
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} className="border-0 bg-transparent !ring-0" />
               <div className="flex items-center gap-1.5 px-1 pb-0.5">
-                <button type="button" aria-label="添加附件" onClick={() => push({ tone: "neutral", title: "附件（演示）", description: "图片 / 视频 / 音频均可作为参考" })} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-foreground"><Paperclip className="size-4" aria-hidden /></button>
+                <button type="button" aria-label="添加附件" onClick={() => push({ tone: "neutral", title: "附件", description: "请到对应工具页上传素材后引用" })} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-foreground"><Paperclip className="size-4" aria-hidden /></button>
                 <span className="text-[11px] text-subtle">{input.length} 字 · 回车发送</span>
                 <span className="flex-1" />
                 {streaming ? (
                   <Button size="sm" variant="secondary" onClick={stop}><Square className="size-3.5" aria-hidden />停止</Button>
                 ) : (
-                  <Button size="sm" onClick={() => send()} disabled={!input.trim()}><Send className="size-3.5" aria-hidden />发送</Button>
+                  <Button size="sm" onClick={() => void send()} disabled={!input.trim()}><Send className="size-3.5" aria-hidden />发送</Button>
                 )}
               </div>
             </div>
-            <p className="mt-2 text-center text-[11px] text-subtle">TODO(API): 接入 POST /agent/chat（SSE 流式）与 GET /agent/skills 技能挂载。</p>
           </div>
         </div>
       </div>

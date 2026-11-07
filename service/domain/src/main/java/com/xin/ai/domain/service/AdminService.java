@@ -61,7 +61,7 @@ public class AdminService {
                             || ("封禁".equals(status) && "banned".equals(Rows.str(r, "status")))))
                 .filter(r -> q == null || q.isBlank()
                         || Rows.str(r, "nickname", "").contains(q)
-                        || Rows.str(r, "id").contains(q)
+                        || Rows.strContains(r, "id", q)
                         || Rows.str(r, "phone", "").contains(q))
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .toList();
@@ -139,6 +139,22 @@ public class AdminService {
         }
         String status = approve ? "approved" : "rejected";
         store.update(T_REVIEW, itemId, Rows.row("status", status, "reason", reason == null ? "" : reason));
+        // 行内注释1.1：审核队列行带 item_id（指向 discover_items）。
+        //              通过时要把作品本身的 review_status 改成 approved，
+        //              否则公开流按「仅审核通过可见」过滤会一直看不到这条作品；
+        //              同时把它写进公共素材库，前台素材中心才有内容可展示。
+        String contentId = Rows.str(item, "item_id", "");
+        if (!contentId.isEmpty()) {
+            store.update(DiscoverService.T_ITEMS, contentId, Rows.row("review_status", status));
+            if (approve) {
+                store.put(T_PUBLIC_ASSETS, contentId, Rows.row(
+                        "id", contentId,
+                        "name", Rows.str(item, "title", ""),
+                        "scope", "全员",
+                        "thumb", Rows.str(item, "thumb", ""),
+                        "created_at", Times.full(Times.now())));
+            }
+        }
         audit(operator, approve ? "审核通过" : "审核驳回", itemId,
                 Rows.row("status_before", Rows.str(item, "status"), "status_after", status), reason);
     }
@@ -206,8 +222,12 @@ public class AdminService {
 
     // 行内注释3：全站积分流水（运营视角）。
     public List<Map<String, Object>> adminLedger(String type, int page, int pageSize) {
-        List<Map<String, Object>> all = store.listWhere(T_LEDGER, r -> true).stream()
-                .filter(r -> type == null || type.isBlank() || "全部".equals(type) || type.equals(Rows.str(r, "type")))
+        // 行内注释3：全站积分流水（运营视角）。
+        // 行内注释3.1：积分流水是「按用户分表」存的（point_ledger_{userId}），
+        //              所以这里必须按前缀聚合，否则永远查不到任何行。
+        String typeCode = ledgerTypeCode(type);
+        List<Map<String, Object>> all = store.listByTypePrefix(BillingService.T_LEDGER + "_").stream()
+                .filter(r -> typeCode.isEmpty() || typeCode.equals(Rows.str(r, "type")))
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .toList();
         int from = Math.min((page - 1) * pageSize, all.size());
@@ -216,10 +236,47 @@ public class AdminService {
                 "id", Rows.str(l, "id"),
                 "user_id", Rows.str(l, "user_id", ""),
                 "type", Rows.str(l, "type", ""),
+                "type_label", ledgerTypeLabel(Rows.str(l, "type", "")),
                 "amount", Rows.num(l, "amount"),
                 "balance", Rows.num(l, "balance"),
                 "note", Rows.str(l, "note", ""),
                 "created_at", Rows.str(l, "created_at"))).toList();
+    }
+
+    /**
+     * 流水类型中文标签 —— 与前端 admin/[section] 的 Select 选项一一对应。
+     * 行内注释3.2：前端下拉是「充值/消耗/退回/赠送/冻结」中文，
+     *              后端存的是 recharge/settle/refund/adjust/freeze 原始码，
+     *              筛选时需要双向兼容（传中文或原始码都能命中）。
+     */
+    private static String ledgerTypeLabel(String code) {
+        return switch (code == null ? "" : code) {
+            case "recharge" -> "充值";
+            case "settle" -> "消耗";
+            case "refund" -> "退回";
+            case "adjust" -> "赠送";
+            case "freeze" -> "冻结";
+            default -> code;
+        };
+    }
+
+    /**
+     * 流水类型筛选归一化 —— 中文标签与原始码双向兼容。
+     * 行内注释3.3：前端传「充值」，后端要能翻译成 recharge 再去比对；
+     *              前端传 recharge 也要能直接命中。空/「全部」表示不筛选。
+     */
+    private static String ledgerTypeCode(String type) {
+        if (type == null || type.isBlank() || "全部".equals(type)) {
+            return "";
+        }
+        return switch (type) {
+            case "充值" -> "recharge";
+            case "消耗" -> "settle";
+            case "退回" -> "refund";
+            case "赠送" -> "adjust";
+            case "冻结" -> "freeze";
+            default -> type;
+        };
     }
 
     // ---------------- 技能包与视频技能 ----------------
@@ -428,6 +485,36 @@ public class AdminService {
 
     // ---------------- 售价积分 ----------------
 
+    /**
+     * 售价表 —— 后台改价页读取。
+     * 行内注释7.0：公开表（ability_pricing）有覆盖就以覆盖为准，否则回落基线定价表。
+     *              返回字段与前端 admin/pricing 的表格列一一对应：
+     *              model_key / spec / points / cost / margin / warning。
+     */
+    public List<Map<String, Object>> pricingTable() {
+        List<Map<String, Object>> base = billing.pricingTable();
+        Map<String, Map<String, Object>> overrides = new LinkedHashMap<>();
+        store.listWhere(T_PRICING, r -> true)
+                .forEach(o -> overrides.put(Rows.str(o, "model_key") + "|" + Rows.str(o, "spec"), o));
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> p : base) {
+            String key = Rows.str(p, "model_key") + "|" + Rows.str(p, "spec");
+            Map<String, Object> ov = overrides.get(key);
+            Map<String, Object> m = new LinkedHashMap<>(p);
+            if (ov != null) {
+                m.put("points", Rows.num(ov, "points"));
+            }
+            int points = Rows.num(m, "points");
+            double cost = m.get("cost") == null ? 0 : ((Number) m.get("cost")).doubleValue();
+            double margin = points <= 0 || cost <= 0 ? 1 : (points - cost) / points;
+            m.put("margin", margin);
+            // 行内注释7.0.1：黄警阈值与改价护栏一致 —— 毛利率低于 30% 提示但不阻断。
+            m.put("warning", margin < 0.30 ? "毛利率低于 30%" : null);
+            out.add(m);
+        }
+        return out;
+    }
+
     // 行内注释7：改价 —— 毛利护栏：售价 < 成本 拒绝；毛利率 <10% 拒绝，<30% 放行但打黄警。
     public Map<String, Object> updatePricing(String operator, String modelKey, String spec, int points, String reason) {
         Map<String, Object> base = billing.findPricing(modelKey, spec);
@@ -515,16 +602,34 @@ public class AdminService {
     // ---------------- 发票（运营） ----------------
 
     public List<Map<String, Object>> adminInvoices(String status) {
+        // 行内注释8：发票状态契约 —— 前端后台页按 approved / pending 分页签过滤，
+        //            且 r.status === "approved" 时才显示「已开票」。
+        //            库里存的是 done，所以对外统一映射成 approved，
+        //            同时保留 status_code 给需要原始值的调用方。
         return store.listWhere(T_INVOICES, r -> true).stream()
-                .filter(r -> status == null || status.isBlank() || status.equals(Rows.str(r, "status")))
+                .filter(r -> status == null || status.isBlank() || "全部".equals(status)
+                        || status.equals(invoiceStatusCode(Rows.str(r, "status"))))
                 .map(i -> Rows.row(
                         "id", Rows.str(i, "id"),
                         "title", Rows.str(i, "title", ""),
                         "amount", Rows.num(i, "amount"),
-                        "status", Rows.str(i, "status"),
+                        "status", invoiceStatusCode(Rows.str(i, "status")),
+                        "status_code", Rows.str(i, "status", ""),
                         "invoice_no", Rows.str(i, "invoice_no", ""),
                         "created_at", Rows.str(i, "created_at")))
                 .toList();
+    }
+
+    /**
+     * 发票状态归一化 —— done → approved。
+     * 行内注释8.1：库里 status 写的是 done（业务语义「已开票」），
+     *              但前端分页签与徽标用的是 approved，两个词必须统一。
+     */
+    private static String invoiceStatusCode(String status) {
+        if (status == null || status.isBlank()) {
+            return "pending";
+        }
+        return "done".equals(status) ? "approved" : status;
     }
 
     public void approveInvoice(String operator, String id, boolean approve, String reason) {

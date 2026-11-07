@@ -25,4 +25,47 @@ public class RelayConfig {
             RelayConfigService.SecretBox secretBox) {
         return new RelayConfigService(dataSource, secretBox);
     }
+
+    /**
+     * 文本对话服务 —— Agent 的对话后端。
+     * 行内注释3：优先调 DB 里配置的 chat.text.* 接入点（真实文本模型），
+     *            未配置时回落本地结构化应答，保证 SSE 链路始终可用。
+     */
+    @Bean
+    public com.xin.ai.domain.service.ChatService chatService(
+            RelayConfigService relayConfig,
+            @org.springframework.beans.factory.annotation.Qualifier("relayAdapter")
+            com.xin.ai.adapters.adapters.RelayAdapter adapter,
+            com.xin.ai.adapters.router.ChannelRouter router,
+            com.xin.ai.common.cache.RedisService redis) {
+        return new com.xin.ai.domain.service.ChatService(relayConfig, adapter, router, redis);
+    }
+
+    /**
+     * 熔断状态落库器 —— 把 ChannelRouter 的熔断判定接到 model_channels.circuit_state。
+     * 行内注释4：多实例部署时熔断状态要共享，否则每个实例都以为别的实例还活着，
+     *            会同时猛打一个已经挂掉的站。
+     */
+    @Bean("relayCircuitStore")
+    public com.xin.ai.adapters.router.ChannelRouter.CircuitStore relayCircuitStore(
+            RelayConfigService relayConfig) {
+        return new com.xin.ai.adapters.router.ChannelRouter.CircuitStore() {
+            @Override
+            public com.xin.ai.adapters.router.ChannelRouter.State load(String channelId) {
+                RelayConfigService.CircuitState st = relayConfig.circuitState(channelId);
+                return st == null ? null
+                        : new com.xin.ai.adapters.router.ChannelRouter.State(st.state(), st.consecutiveFailures());
+            }
+
+            @Override
+            public void onSuccess(String channelId) {
+                relayConfig.markChannelSuccess(channelId);
+            }
+
+            @Override
+            public void onFailure(String channelId, int consecutiveFailures, int threshold) {
+                relayConfig.markChannelFailure(channelId, consecutiveFailures, threshold);
+            }
+        };
+    }
 }

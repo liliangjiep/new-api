@@ -40,7 +40,7 @@ public class TaskOrchestrator {
                 ? UUID.randomUUID().toString() : idempotencyKey;
 
         // 幂等：已存在同键任务直接返回首单
-        Map<String, Object> existing = store.listWhere(T_TASKS, r -> Rows.str(r, "idempotency_key").equals(idem))
+        Map<String, Object> existing = store.listWhere(T_TASKS, r -> Rows.strEq(r, "idempotency_key", idem))
                 .stream().findFirst().orElse(null);
         if (existing != null) {
             return view(existing);
@@ -80,12 +80,12 @@ public class TaskOrchestrator {
 
     // 行内注释6：任务列表 —— 按用户隔离，支持状态筛选与关键字（标题/ID）。
     public List<Map<String, Object>> list(String userId, String status, String query, int page, int pageSize) {
-        List<Map<String, Object>> all = store.listWhere(T_TASKS, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        List<Map<String, Object>> all = store.listWhere(T_TASKS, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .filter(r -> status == null || status.isBlank() || status.equals(Rows.str(r, "status")))
                 .filter(r -> query == null || query.isBlank()
                         || Rows.str(r, "title", "").contains(query)
-                        || Rows.str(r, "id").contains(query))
+                        || Rows.strContains(r, "id", query))
                 .toList();
         int from = Math.min((page - 1) * pageSize, all.size());
         int to = Math.min(from + pageSize, all.size());
@@ -200,7 +200,7 @@ public class TaskOrchestrator {
     }
 
     public List<Map<String, Object>> listBatches(String userId, int page, int pageSize) {
-        List<Map<String, Object>> all = store.listWhere(T_BATCHES, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        List<Map<String, Object>> all = store.listWhere(T_BATCHES, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .toList();
         int from = Math.min((page - 1) * pageSize, all.size());
@@ -210,10 +210,10 @@ public class TaskOrchestrator {
 
     public Map<String, Object> getBatch(String userId, String batchId) {
         Map<String, Object> batch = store.find(T_BATCHES, batchId).orElse(null);
-        if (batch == null || !Rows.str(batch, "user_id").equals(userId)) {
+        if (batch == null || !Rows.strEq(batch, "user_id", userId)) {
             throw new BizException(ErrorCode.TASK_NOT_FOUND);
         }
-        List<String> taskIds = store.listWhere(T_BATCH_ITEMS, r -> Rows.str(r, "batch_id").equals(batchId))
+        List<String> taskIds = store.listWhere(T_BATCH_ITEMS, r -> Rows.strEq(r, "batch_id", batchId))
                 .stream().map(r -> Rows.str(r, "id")).toList();
         List<Map<String, Object>> tasks = taskIds.stream()
                 .map(id -> store.find(T_TASKS, id).orElse(null))
@@ -253,7 +253,7 @@ public class TaskOrchestrator {
 
     private Map<String, Object> requireOwned(String userId, String taskId) {
         Map<String, Object> task = store.find(T_TASKS, taskId).orElse(null);
-        if (task == null || !Rows.str(task, "user_id").equals(userId)) {
+        if (task == null || !Rows.strEq(task, "user_id", userId)) {
             // 越权一律 404，不暴露资源存在性
             throw new BizException(ErrorCode.TASK_NOT_FOUND);
         }

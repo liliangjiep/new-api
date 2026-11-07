@@ -28,7 +28,7 @@ public class AgentService {
     }
 
     public List<Map<String, Object>> listSessions(String userId) {
-        return store.listWhere(T_SESSIONS, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        return store.listWhere(T_SESSIONS, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .map(s -> Rows.row(
                         "id", Rows.str(s, "id"),
@@ -52,19 +52,19 @@ public class AgentService {
 
     public void deleteSession(String userId, String sessionId) {
         Map<String, Object> s = store.find(T_SESSIONS, sessionId).orElse(null);
-        if (s == null || !Rows.str(s, "user_id").equals(userId)) {
+        if (s == null || !Rows.strEq(s, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         store.delete(T_SESSIONS, sessionId);
-        store.deleteWhere(T_MESSAGES, r -> Rows.str(r, "session_id").equals(sessionId));
+        store.deleteWhere(T_MESSAGES, r -> Rows.strEq(r, "session_id", sessionId));
     }
 
     public List<Map<String, Object>> messages(String userId, String sessionId) {
         Map<String, Object> s = store.find(T_SESSIONS, sessionId).orElse(null);
-        if (s == null || !Rows.str(s, "user_id").equals(userId)) {
+        if (s == null || !Rows.strEq(s, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
-        return store.listWhere(T_MESSAGES, r -> Rows.str(r, "session_id").equals(sessionId)).stream()
+        return store.listWhere(T_MESSAGES, r -> Rows.strEq(r, "session_id", sessionId)).stream()
                 .sorted((a, b) -> Rows.num(a, "seq") - Rows.num(b, "seq"))
                 .map(m -> Rows.row(
                         "id", Rows.str(m, "id"),
@@ -77,10 +77,10 @@ public class AgentService {
     // 行内注释3：追加消息 —— seq 单调递增，供 SSE 增量推送。
     public Map<String, Object> appendMessage(String userId, String sessionId, String role, String content) {
         Map<String, Object> s = store.find(T_SESSIONS, sessionId).orElse(null);
-        if (s == null || !Rows.str(s, "user_id").equals(userId)) {
+        if (s == null || !Rows.strEq(s, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
-        int seq = (int) store.countWhere(T_MESSAGES, r -> Rows.str(r, "session_id").equals(sessionId));
+        int seq = (int) store.countWhere(T_MESSAGES, r -> Rows.strEq(r, "session_id", sessionId));
         String id = "msg_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         store.put(T_MESSAGES, id, Rows.row(
                 "id", id, "session_id", sessionId, "user_id", userId,
@@ -104,5 +104,20 @@ public class AgentService {
     public Map<String, Object> desktopSession(String userId) {
         String sessionId = "dsk_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         return Rows.row("session_id", sessionId, "session_url", "https://cloud.local.invalid/session/" + sessionId);
+    }
+
+    /**
+     * 语音识别服务可用性 —— 返回服务商标识。
+     * 行内注释7：ASR 属于 A 类（需要账号凭据）—— 未配置凭据时返回空串，
+     *             前端据此提示「语音输入暂不可用，请改用文字输入」，
+     *             而不是静默返回空转写结果让人以为识别成功但内容为空。
+     */
+    public String transcribeAvailable() {
+        String provider = System.getenv("ASR_PROVIDER");
+        if (provider == null || provider.isBlank()) {
+            return "";
+        }
+        String key = System.getenv("ASR_API_KEY");
+        return key == null || key.isBlank() ? "" : provider;
     }
 }

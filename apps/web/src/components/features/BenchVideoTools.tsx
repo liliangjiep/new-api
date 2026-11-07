@@ -10,6 +10,13 @@ import {
 } from "@/components/features/BenchWorkspace";
 import { PopoverSelect } from "@/components/features/PopoverSelect";
 import { useToast } from "@/components/features/ToastHost";
+import { ApiError } from "@/lib/api";
+import { waitTask } from "@/lib/backend/tasks";
+import {
+  submitQualityEnhance,
+  submitSubtitleErase,
+  submitWatermarkRemove,
+} from "@/lib/backend/tools";
 
 /**
  * 原站三个视频处理工具共用骨架（实测 /toolbox/video-quality-enhance 等）：
@@ -41,6 +48,14 @@ export interface GuideStep {
   title: string;
   description: string;
   icon: string;
+}
+
+/** 行内注释8.1：框选区域 —— 坐标是百分比（0-100），与后端 regions 结构一致。 */
+export interface EraseRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /* —— 原站指引图标（逐字复刻 path d） —— */
@@ -84,6 +99,8 @@ export function BenchVideoProcessTool({
   controlsInline,
   previewHint,
   nav,
+  /** 行内注释9：真实提交回调 —— 传入选中视频的资产 ID，由各工具页决定打哪个后端接口。 */
+  onSubmit,
 }: {
   title: string;
   uploadTitle: string;
@@ -95,23 +112,40 @@ export function BenchVideoProcessTool({
   controlsInline?: React.ReactNode;
   previewHint: string;
   nav?: { id: string; title: string; sections: import("@/lib/skills").NavSection[] };
+  onSubmit?: (videoAssetId: string, regions: EraseRegion[]) => Promise<void>;
 }) {
   const { push } = useToast();
   const [uploadedName, setUploadedName] = useState<string | null>(null);
+  /** 行内注释9.1：选中视频的资产 ID —— 后端要的是 ast_* ID，不是文件 URL。 */
+  const [videoAssetId, setVideoAssetId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const uploaded = !!uploadedName;
   const [busy, setBusy] = useState(false);
+  /** 行内注释9.2：默认框选区域 —— 字幕擦除必带，否则后端直接 400。 */
+  const [eraseRegions] = useState<EraseRegion[]>([{ x: 0, y: 0, w: 100, h: 100 }]);
 
-  const go = () => {
+  const go = async () => {
     if (!uploaded) {
       push({ tone: "warning", title: "请先上传视频" });
       return;
     }
+    if (!videoAssetId) {
+      push({ tone: "warning", title: "请先从资产库选择视频" });
+      return;
+    }
     setBusy(true);
-    setTimeout(() => {
+    try {
+      if (onSubmit) {
+        await onSubmit(videoAssetId, eraseRegions);
+      } else {
+        push({ tone: "success", title: "已提交", description: title });
+      }
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "提交失败，请稍后重试";
+      push({ tone: "danger", title: "提交失败", description: msg });
+    } finally {
       setBusy(false);
-      push({ tone: "success", title: "已提交", description: title });
-    }, 1500);
+    }
   };
 
   return (
@@ -126,7 +160,10 @@ export function BenchVideoProcessTool({
               <ToolHeader
                 title={title}
                 onBack={() => window.history.back()}
-                onNew={() => setUploadedName(null)}
+                onNew={() => {
+                  setUploadedName(null);
+                  setVideoAssetId(null);
+                }}
               />
             </div>
 
@@ -292,7 +329,10 @@ export function BenchVideoProcessTool({
       maxSelect={1}
       onClose={() => setPickerOpen(false)}
       onConfirm={(assets: AssetItem[]) => {
-        if (assets[0]) setUploadedName(assets[0].name);
+        if (assets[0]) {
+          setUploadedName(assets[0].name);
+          setVideoAssetId(assets[0].id);
+        }
       }}
     />
     </>
@@ -301,6 +341,7 @@ export function BenchVideoProcessTool({
 
 /* —— 视频画质增强 —— */
 export function QualityEnhanceTool() {
+  const { push } = useToast();
   const [version, setVersion] = useState("大模型版");
   const [spec, setSpec] = useState("1080P · 无");
   return (
@@ -310,6 +351,23 @@ export function QualityEnhanceTool() {
       uploadHint="支持 5 分钟以内的 mp4 / mov / avi 等格式"
       cta="开始增强"
       previewHint="处理完成后会在这里预览增强后的视频。"
+      onSubmit={async (videoAssetId) => {
+        const task = await submitQualityEnhance({
+          video_asset_id: videoAssetId,
+          target: spec.split(" · ")[0],
+        });
+        push({ tone: "success", title: "已提交画质增强", description: "在右侧队列查看进度" });
+        const done = await waitTask(task.id);
+        if (done.status === "succeeded") {
+          push({ tone: "success", title: "画质增强完成" });
+        } else {
+          push({
+            tone: "warning",
+            title: "增强失败",
+            description: done.fail_reason || done.error_code || "上游未返回结果",
+          });
+        }
+      }}
       steps={[
         {
           title: "上传视频",
@@ -417,6 +475,7 @@ export function QualityEnhanceTool() {
 
 /* —— 视频字幕擦除 —— */
 export function SubtitleEraseTool() {
+  const { push } = useToast();
   return (
     <BenchVideoProcessTool
       title="视频字幕擦除"
@@ -424,6 +483,24 @@ export function SubtitleEraseTool() {
       uploadHint="支持 30 秒以内的 mp4 / mov / avi 等格式"
       cta="开始擦除"
       previewHint="处理完成后会在这里预览擦除后的视频。"
+      onSubmit={async (videoAssetId, regions) => {
+        // 行内注释10：字幕擦除必须带框选区域 —— 后端会校验每个区域的宽高。
+        const task = await submitSubtitleErase({
+          video_asset_id: videoAssetId,
+          regions: regions.length > 0 ? regions : [{ x: 0, y: 0, w: 100, h: 100 }],
+        });
+        push({ tone: "success", title: "已提交字幕擦除", description: "在右侧队列查看进度" });
+        const done = await waitTask(task.id);
+        if (done.status === "succeeded") {
+          push({ tone: "success", title: "字幕擦除完成" });
+        } else {
+          push({
+            tone: "warning",
+            title: "擦除失败",
+            description: done.fail_reason || done.error_code || "上游未返回结果",
+          });
+        }
+      }}
       steps={[
         {
           title: "上传视频",
@@ -452,7 +529,7 @@ export function SubtitleEraseTool() {
 
 /* —— 视频去水印 —— */
 export function WatermarkRemoveTool() {
-  const { push: pushWm } = useToast();
+  const { push } = useToast();
   const [regions, setRegions] = useState<string[]>(["78,4 / 96,14"]);
   const [selected, setSelected] = useState(0);
   return (
@@ -462,6 +539,20 @@ export function WatermarkRemoveTool() {
       uploadHint="支持 30 秒以内的 mp4 / mov / avi 等格式；超过 2K（长边 2048）将自动压缩至 2K 后处理"
       cta="开始去水印"
       previewHint="处理完成后会在这里预览去水印后的视频。"
+      onSubmit={async (videoAssetId) => {
+        const task = await submitWatermarkRemove({ video_asset_id: videoAssetId });
+        push({ tone: "success", title: "已提交去水印", description: "在右侧队列查看进度" });
+        const done = await waitTask(task.id);
+        if (done.status === "succeeded") {
+          push({ tone: "success", title: "去水印完成" });
+        } else {
+          push({
+            tone: "warning",
+            title: "去水印失败",
+            description: done.fail_reason || done.error_code || "上游未返回结果",
+          });
+        }
+      }}
       steps={[
         {
           title: "上传视频",
@@ -495,7 +586,7 @@ export function WatermarkRemoveTool() {
               >
                 <button
                   type="button"
-                  onClick={() => { setSelected(i); pushWm({ tone: 'neutral', title: '已选中水印区 ' + (i + 1) }); }}
+                  onClick={() => { setSelected(i); push({ tone: 'neutral', title: '已选中水印区 ' + (i + 1) }); }}
                   aria-label={`水印区 ${i + 1}: 左上 78,4 · 右下 96,14`}
                   className="min-w-0 flex-1 rounded-md pr-4 text-left"
                 >

@@ -265,6 +265,12 @@ public class AdminController extends BaseController {
 
     // ---------------- 售价积分 ----------------
 
+    /** 售价积分表 —— 后台改价页读取（公开表优先取 DB，回落基线常量）。 */
+    @GetMapping("/pricing")
+    public ApiResponse<List<Map<String, Object>>> pricing() {
+        return list(admin.pricingTable());
+    }
+
     @PostMapping("/pricing")
     public ApiResponse<Map<String, Object>> updatePricing(@CurrentUser AuthContext.Principal user,
             @RequestBody PricingRequest req) {

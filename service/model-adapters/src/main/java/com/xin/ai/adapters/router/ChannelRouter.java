@@ -15,7 +15,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 行内注释2：不可回退错误（4xx 参数错误）直接终止 —— 换站也是错，白白消耗上游额度。
  * 行内注释3：熔断器按 channel_id 维度，连续失败达阈值即把该站标记 open，后续请求直接跳过。
  * 行内注释4：成功则把该站记为 lastGood，熔断恢复时优先选它（sticky 策略，减少抖动）。
- * TODO(API): Resilience4j CircuitBreaker 接入后替换本地计数器，语义保持不变。
+ * 行内注释5：熔断状态通过 CircuitStore 落库（model_channels.circuit_state）——
+ *             多实例部署时各实例看到同一份状态，不会各自以为对方还活着。
+ *             冷却到期时间仍在内存（运行时状态，无需跨实例）。
  */
 public class ChannelRouter {
 
@@ -24,18 +26,32 @@ public class ChannelRouter {
     /** 熔断后冷却毫秒。 */
     private static final long COOLDOWN_MS = 60_000L;
 
-    /** channel_id → 连续失败计数。 */
-    private final Map<String, AtomicInteger> failures = new ConcurrentHashMap<>();
-    /** channel_id → 熔断到期时间戳。 */
-    private final Map<String, Long> openUntil = new ConcurrentHashMap<>();
-    /** channel_id → 最近一次成功的站（sticky 优先）。 */
-    private final Map<String, Long> lastGood = new ConcurrentHashMap<>();
+    /** 熔断状态持久化接口 —— 由 domain 层用 JdbcTemplate 实现。 */
+    public interface CircuitStore {
+        /** 读熔断状态；返回 null 表示没记录。 */
+        State load(String channelId);
 
+        /** 记一次成功。 */
+        void onSuccess(String channelId);
+
+        /** 记一次失败（传入累计失败次数与阈值）。 */
+        void onFailure(String channelId, int consecutiveFailures, int threshold);
+    }
+
+    /** 熔断状态值对象。 */
+    public record State(String state, int consecutiveFailures) {
+        public boolean isOpen() {
+            return "open".equalsIgnoreCase(state);
+        }
+    }
+
+    /** 候选计划 —— 按回退顺序排好的接入点列表。 */
     public record RoutePlan(List<ModelAdapter.EndpointSnapshot> candidates) {}
 
     /** 回退尝试的完整结果，含每一跳的成败明细（供审计与后台排障）。 */
     public record Attempt(String channelId, String channelName, boolean ok, String errorCode, String errorMessage) {}
 
+    /** 回退执行的最终结果。 */
     public record FallbackResult(
             boolean ok,
             ModelAdapter.EndpointSnapshot used,
@@ -45,9 +61,15 @@ public class ChannelRouter {
             String errorMessage,
             List<Attempt> attempts) {}
 
-    /**
-     * 生成候选计划 —— 过滤停用/熔断通道，按 sort_order 升序，健康的 sticky 站提到最前。
-     */
+    /** channel_id → 连续失败计数（内存）。 */
+    private final Map<String, AtomicInteger> failures = new ConcurrentHashMap<>();
+    /** channel_id → 熔断到期时间戳。 */
+    private final Map<String, Long> openUntil = new ConcurrentHashMap<>();
+    /** channel_id → 最近一次成功的站（sticky 优先）。 */
+    private final Map<String, Long> lastGood = new ConcurrentHashMap<>();
+    /** 熔断状态落库器 —— 可为空（纯内存模式）。 */
+    private volatile CircuitStore circuitStore;
+
     public RoutePlan plan(List<ModelAdapter.EndpointSnapshot> endpoints, Map<String, String> channelOf) {
         List<ModelAdapter.EndpointSnapshot> ok = endpoints.stream()
                 // 行内注释5.1：channelOf 允许为空 Map —— 此时 key 映射取不到值是正常的，
@@ -73,6 +95,11 @@ public class ChannelRouter {
     /** 兼容旧逻辑的熔断标记表。 */
     private final Map<String, Boolean> openChannels = new ConcurrentHashMap<>();
 
+    /** 注入熔断状态落库器。 */
+    public void setCircuitStore(CircuitStore store) {
+        this.circuitStore = store;
+    }
+
     public void markOpen(String channelId) {
         openChannels.put(channelId, true);
     }
@@ -81,22 +108,38 @@ public class ChannelRouter {
         openChannels.remove(channelId);
     }
 
-    /** 该站当前是否处于熔断冷却期。 */
+    /**
+     * 该站当前是否处于熔断冷却期。
+     * 行内注释5.2：判定顺序 —— 先看内存冷却到期（没到就是 open），
+     *             到了再查落库状态：落库是 open 说明别的实例也把它熔断了，继续等；
+     *             落库是 closed 说明半开探测时机到了，清计数放行。
+     */
     public boolean isOpen(String channelId) {
         if (channelId == null) {
             return false;
         }
         Long until = openUntil.get(channelId);
-        if (until == null) {
-            return false;
+        long now = System.currentTimeMillis();
+        if (until != null && now <= until) {
+            return true;
         }
-        if (System.currentTimeMillis() > until) {
-            // 行内注释6：冷却到期 —— 半开，清掉熔断标记让下一次尝试重新探测。
+        // 行内注释5.3：落库状态 —— 多实例共享的熔断标记。
+        CircuitStore store = circuitStore;
+        if (store != null) {
+            State st = store.load(channelId);
+            if (st != null && st.isOpen()) {
+                // 行内注释5.4：落库说 open 但本地冷却已过 —— 说明是别的实例熔断的，
+                //             继续按冷却时长等，避免所有实例同时猛打一个坏站。
+                openUntil.put(channelId, now + COOLDOWN_MS);
+                return true;
+            }
+        }
+        if (until != null) {
+            // 行内注释5.5：冷却到期 —— 半开，清掉熔断标记让下一次尝试重新探测。
             openUntil.remove(channelId);
             failures.remove(channelId);
-            return false;
         }
-        return true;
+        return false;
     }
 
     /** 记录一次成功 —— 熔断计数清零，标记为 sticky 首选站。 */
@@ -107,6 +150,10 @@ public class ChannelRouter {
         failures.remove(channelId);
         openUntil.remove(channelId);
         lastGood.put(channelId, System.currentTimeMillis());
+        CircuitStore store = circuitStore;
+        if (store != null) {
+            store.onSuccess(channelId);
+        }
     }
 
     /**
@@ -120,6 +167,10 @@ public class ChannelRouter {
         if (count >= FAILURE_THRESHOLD) {
             openUntil.put(channelId, System.currentTimeMillis() + COOLDOWN_MS);
             failures.remove(channelId);
+        }
+        CircuitStore store = circuitStore;
+        if (store != null) {
+            store.onFailure(channelId, count, FAILURE_THRESHOLD);
         }
     }
 
@@ -188,6 +239,14 @@ public class ChannelRouter {
         m.put("consecutive_failures", f == null ? 0 : f.get());
         m.put("circuit_open", isOpen(channelId));
         m.put("sticky", lastGood.containsKey(channelId));
+        CircuitStore store = circuitStore;
+        if (store != null) {
+            State st = store.load(channelId);
+            if (st != null) {
+                m.put("circuit_state", st.state());
+                m.put("persisted_failures", st.consecutiveFailures());
+            }
+        }
         return m;
     }
 }

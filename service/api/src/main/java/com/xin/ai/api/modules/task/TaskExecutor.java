@@ -5,11 +5,13 @@ import com.xin.ai.adapters.base.ModelAdapter;
 import com.xin.ai.adapters.router.ChannelRouter;
 import com.xin.ai.common.exception.BizException;
 import com.xin.ai.common.exception.ErrorCode;
+import com.xin.ai.common.ratelimit.RedisTokenBucket;
 import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
 import com.xin.ai.domain.service.AdminService;
 import com.xin.ai.domain.service.RelayConfigService;
 import com.xin.ai.domain.service.TaskOrchestrator;
+import com.xin.ai.domain.service.UpstreamParamBuilder;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -63,16 +65,24 @@ public class TaskExecutor {
     private final RelayAdapter adapter;
     private final RelayConfigService relayConfig;
     private final ChannelRouter router;
+    /** 行内注释3.2：分布式令牌桶 —— 按通道限流，多实例共享配额。 */
+    private final RedisTokenBucket tokenBucket;
+    /** 行内注释9.5：上游参数装配 —— 把业务参数（asset_id/avatar_id/regions）翻译成上游要的 URL 与字段。 */
+    private final UpstreamParamBuilder paramBuilder;
 
     public TaskExecutor(DataStore store, TaskOrchestrator tasks,
             @Qualifier("relayAdapter") RelayAdapter adapter,
             RelayConfigService relayConfig,
-            ChannelRouter router) {
+            ChannelRouter router,
+            RedisTokenBucket tokenBucket,
+            UpstreamParamBuilder paramBuilder) {
         this.store = store;
         this.tasks = tasks;
         this.adapter = adapter;
         this.relayConfig = relayConfig;
         this.router = router;
+        this.tokenBucket = tokenBucket;
+        this.paramBuilder = paramBuilder;
     }
 
     /**
@@ -101,11 +111,18 @@ public class TaskExecutor {
             return tasks.get(Rows.str(task, "user_id"), taskId);
         }
 
-        Map<String, Object> params = mapParams(Rows.map(task, "params"), modelKey);
+        Map<String, Object> params = mapParams(Rows.map(task, "params"), modelKey,
+                Rows.str(task, "user_id", ""));
         String idempotencyKey = Rows.str(task, "idempotency_key", "");
         String traceId = org.slf4j.MDC.get("traceId");
 
         ChannelRouter.FallbackResult submitted = router.submitWithFallback(ordered, ep -> {
+            // 行内注释3.3：分通道限流 —— 取不到令牌说明这个站当前超了 RPM 配额，
+            //             记为限流失败并回退到下一站（不回退会直接打爆上游）。
+            if (!acquireToken(ep)) {
+                return new ModelAdapter.ModelResponse(false, null, Map.of(),
+                        "channel.rate_limited", "通道 " + ep.channelName() + " 当前超出 RPM 配额");
+            }
             ModelAdapter.ModelRequest req = new ModelAdapter.ModelRequest(ep, params, idempotencyKey, traceId);
             return adapter.submit(req);
         });
@@ -140,6 +157,30 @@ public class TaskExecutor {
                     polled.errorMessage() == null ? "上游生成失败" : polled.errorMessage());
         }
         return tasks.get(Rows.str(task, "user_id"), taskId);
+    }
+
+    /**
+     * 取限流令牌 —— 通道未配 RPM 限制时不限流。
+     * 行内注释3.4：速率取通道表的 rpm_limit（每分钟请求数），
+     *             换算成每秒补充速率，桶容量给 rpm_limit 的一半（允许一半的突发）。
+     */
+    private boolean acquireToken(ModelAdapter.EndpointSnapshot ep) {
+        if (tokenBucket == null || ep.channelId() == null) {
+            return true;
+        }
+        int rpm = rpmLimitOf(ep.channelId());
+        if (rpm <= 0) {
+            return true;
+        }
+        double perSecond = rpm / 60.0d;
+        int burst = Math.max(1, rpm / 2);
+        return tokenBucket.tryAcquire(ep.channelId(), perSecond, burst);
+    }
+
+    /** 读通道的 RPM 限制 —— 从通道配置表取。 */
+    private int rpmLimitOf(String channelId) {
+        Map<String, Object> ch = relayConfig.findChannel(channelId);
+        return ch == null ? 0 : (int) Rows.num(ch, "rpm_limit", 0);
     }
 
     /**
@@ -220,30 +261,24 @@ public class TaskExecutor {
         return sb.toString();
     }
 
-    /** 参数映射 —— 只保留上游认识的键，避免把业务字段透传过去。 */
-    private Map<String, Object> mapParams(Map<String, Object> params, String modelKey) {
+    /**
+     * 参数映射 —— 把业务参数翻译成上游参数。
+     * 行内注释7.1：原先这里只放行 prompt/size/resolution 等固定键，
+     *             导致 video_asset_id / avatar_id / regions 这些业务字段被整段丢掉，
+     *             上游拿到的请求体是空的。这里交给 UpstreamParamBuilder 统一处理：
+     *             标准链路沿用白名单，工具类链路额外解析资产/形象 ID 成真实 URL。
+     */
+    private Map<String, Object> mapParams(Map<String, Object> params, String modelKey, String userId) {
+        if (paramBuilder != null) {
+            return paramBuilder.build(modelKey, params, userId);
+        }
+        // 行内注释7.2：装配器缺失时退化到白名单映射（保证任务不会因 Bean 缺失而整体不可用）。
         Map<String, Object> out = new LinkedHashMap<>();
         params.forEach((k, v) -> {
             if (PARAM_KEYS.containsKey(k)) {
                 out.put(PARAM_KEYS.get(k), v);
             }
         });
-        // 行内注释8：resolution 与 size 的默认推导 —— 由 spec 决定 1k/2k/4k。
-        if (!out.containsKey("resolution")) {
-            if (modelKey.endsWith("4k")) {
-                out.put("resolution", "4k");
-            } else if (modelKey.endsWith("2k")) {
-                out.put("resolution", "2k");
-            } else if (modelKey.contains("video")) {
-                out.put("resolution", "720p");
-                out.putIfAbsent("duration", 5);
-                out.putIfAbsent("aspect_ratio", "16:9");
-            } else {
-                out.put("resolution", "1k");
-            }
-        }
-        out.putIfAbsent("size", "1:1");
-        out.putIfAbsent("n", 1);
         return out;
     }
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
+import { useAdminGuard } from "@/lib/useAdminGuard";
 import { STUDIO_ROUTES, ADMIN_SECTIONS } from "@/lib/domain";
 import { ThemeSwitcher } from "@/components/layout/ThemeSwitcher";
 import { Button } from "@/components/ui/primitives";
@@ -274,6 +275,8 @@ export function AdminShell({
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  // 行内注释1：角色门禁 —— 非管理员不渲染后台内容（后端还有一层 403 兜底）。
+  const guard = useAdminGuard();
 
   const groups = ADMIN_SECTIONS.reduce<Record<string, typeof ADMIN_SECTIONS>>(
     (acc, s) => {
@@ -282,6 +285,39 @@ export function AdminShell({
     },
     {}
   );
+
+  // 行内注释1.1：门禁三态 —— 校验中显示骨架；未登录引导去登录页；已登录但无权限给出明确提示。
+  if (guard === "checking") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg">
+        <p className="text-xs text-fg-subtle">正在校验管理员权限…</p>
+      </div>
+    );
+  }
+  if (guard === "anonymous") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-bg px-6 text-center">
+        <p className="text-sm font-medium text-fg">运营后台仅限管理员访问</p>
+        <p className="text-xs text-fg-subtle">请先登录有后台权限的账号。</p>
+        <Link href="/login?next=%2Fadmin">
+          <Button size="sm">去登录</Button>
+        </Link>
+      </div>
+    );
+  }
+  if (guard === "denied") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-bg px-6 text-center">
+        <p className="text-sm font-medium text-fg">没有后台访问权限</p>
+        <p className="text-xs text-fg-subtle">
+          当前账号不是管理员（需要 ADMIN 或 OPERATOR 角色）。
+        </p>
+        <Link href="/workbench">
+          <Button size="sm" variant="secondary">返回工作台</Button>
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen">

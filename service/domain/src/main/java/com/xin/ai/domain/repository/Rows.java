@@ -22,6 +22,40 @@ public final class Rows {
         return v == null || v.isBlank() ? def : v;
     }
 
+    /**
+     * 字段值与目标字符串比较（null 安全）。
+     * 行内注释1.1：为什么需要它 —— str(row, key) 在字段缺失时返回 null，
+     *               直接写 Rows.str(r, "user_id").equals(uid) 会 NPE。
+     *               而 entity_rows 里不同表/不同版本写入的行字段并不齐备，
+     *               所以「字段可能缺失」是常态，不是异常。
+     * 行内注释1.2：语义与 "value.equals(target)" 完全一致（target 为 null 时返回 false），
+     *               只是不再抛 NPE —— 字段缺失一律视为「不匹配」。
+     */
+    public static boolean strEq(Map<String, Object> row, String key, String target) {
+        if (target == null) {
+            return false;
+        }
+        return target.equals(str(row, key));
+    }
+
+    /** 同 strEq，但忽略大小写（对应 equalsIgnoreCase）。 */
+    public static boolean strEqIgnoreCase(Map<String, Object> row, String key, String target) {
+        String v = str(row, key);
+        if (v == null || target == null) {
+            return false;
+        }
+        return v.equalsIgnoreCase(target);
+    }
+
+    /** 字段值是否包含目标子串（对应 value.contains(target)，null 安全）。 */
+    public static boolean strContains(Map<String, Object> row, String key, String target) {
+        String v = str(row, key);
+        if (v == null || target == null) {
+            return false;
+        }
+        return v.contains(target);
+    }
+
     public static int num(Map<String, Object> row, String key) {
         return num(row, key, 0);
     }

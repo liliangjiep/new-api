@@ -60,7 +60,7 @@ public class CommerceService {
     }
 
     public List<Map<String, Object>> listInvoices(String userId, int page, int pageSize) {
-        List<Map<String, Object>> all = store.listWhere(T_INVOICES, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        List<Map<String, Object>> all = store.listWhere(T_INVOICES, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .toList();
         int from = Math.min((page - 1) * pageSize, all.size());
@@ -74,11 +74,11 @@ public class CommerceService {
 
     // 行内注释4：分销概览 —— 伙伴信息 + 佣金余额 + 结算记录。
     public Map<String, Object> affiliateOverview(String userId) {
-        Map<String, Object> partner = store.listWhere(T_PARTNERS, r -> Rows.str(r, "user_id").equals(userId))
+        Map<String, Object> partner = store.listWhere(T_PARTNERS, r -> Rows.strEq(r, "user_id", userId))
                 .stream().findFirst().orElse(null);
-        int commission = store.listWhere(T_COMMISSIONS, r -> Rows.str(r, "user_id").equals(userId))
+        int commission = store.listWhere(T_COMMISSIONS, r -> Rows.strEq(r, "user_id", userId))
                 .stream().mapToInt(r -> Rows.num(r, "amount")).sum();
-        List<Map<String, Object>> settlements = store.listWhere(T_SETTLEMENTS, r -> Rows.str(r, "user_id").equals(userId))
+        List<Map<String, Object>> settlements = store.listWhere(T_SETTLEMENTS, r -> Rows.strEq(r, "user_id", userId))
                 .stream().map(s -> Rows.row(
                         "id", Rows.str(s, "id"),
                         "period", Rows.str(s, "period", ""),
@@ -95,7 +95,7 @@ public class CommerceService {
     }
 
     public List<Map<String, Object>> affiliateSettlements(String userId) {
-        return store.listWhere(T_SETTLEMENTS, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        return store.listWhere(T_SETTLEMENTS, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .map(s -> Rows.row(
                         "id", Rows.str(s, "id"),
                         "period", Rows.str(s, "period", ""),
@@ -110,7 +110,7 @@ public class CommerceService {
         if (amount <= 0) {
             throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("message", "提现金额必须大于 0"));
         }
-        int balance = store.listWhere(T_COMMISSIONS, r -> Rows.str(r, "user_id").equals(userId))
+        int balance = store.listWhere(T_COMMISSIONS, r -> Rows.strEq(r, "user_id", userId))
                 .stream().mapToInt(r -> Rows.num(r, "amount")).sum();
         if (amount > balance) {
             throw new BizException(ErrorCode.CREDIT_INSUFFICIENT,

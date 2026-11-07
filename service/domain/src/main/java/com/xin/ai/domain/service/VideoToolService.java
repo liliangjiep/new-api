@@ -61,20 +61,23 @@ public class VideoToolService {
     // ---------------- 商详套图 ----------------
 
     // 行内注释5：商详套图 —— 一次提交生成 6 张套图，单张可重生成。
+    // 行内注释5.1：count 为生成张数（前端默认 6）—— 报价与循环都按它算，
+    //              不能写死，否则前端调「3 张」时后端仍按 6 张扣费。
     public Map<String, Object> ecommerceSet(String userId, List<String> productAssetIds, String lang,
-            String ratio, String model, String resolution, String format) {
+            String ratio, String model, String resolution, String format, Integer count) {
         if (productAssetIds == null || productAssetIds.isEmpty()) {
             throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("message", "至少需要一个商品图"));
         }
+        int total = count == null || count <= 0 ? 6 : Math.min(count, 12);
         List<Map<String, Object>> items = new java.util.ArrayList<>();
         String modelKey = "image.t2i.2k";
-        Map<String, Object> quote = billing.quote(userId, modelKey, "2K", 6, Rows.row(
+        Map<String, Object> quote = billing.quote(userId, modelKey, "2K", total, Rows.row(
                 "lang", lang, "ratio", ratio, "model", model, "resolution", resolution, "format", format));
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < total; i++) {
             Map<String, Object> params = Rows.row(
                     "product_asset_ids", productAssetIds, "lang", lang, "ratio", ratio,
                     "model", model, "resolution", resolution, "format", format,
-                    "index", i + 1, "title", "商详套图 " + (i + 1) + "/6");
+                    "index", i + 1, "title", "商详套图 " + (i + 1) + "/" + total);
             items.add(Rows.row(
                     "model_key", modelKey, "spec", "2K", "count", 1, "params", params,
                     "quote_fingerprint", Rows.str(quote, "fingerprint"),
@@ -86,6 +89,7 @@ public class VideoToolService {
                 "product_asset_ids", productAssetIds,
                 "lang", lang, "ratio", ratio, "model", model,
                 "resolution", resolution, "format", format,
+                "count", total,
                 "created_at", Times.full(Times.now())));
         return batch;
     }
@@ -93,7 +97,7 @@ public class VideoToolService {
     // 行内注释6：单张重生成 —— 只重跑批次内一个 item，报价按 1 张计。
     public Map<String, Object> regenerateEcommerceItem(String userId, String batchId, String taskId) {
         Map<String, Object> batch = store.find(T_EC_ITEMS, batchId).orElse(null);
-        if (batch == null || !Rows.str(batch, "user_id").equals(userId)) {
+        if (batch == null || !Rows.strEq(batch, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         Map<String, Object> quote = billing.quote(userId, "image.t2i.2k", "2K", 1, Rows.row("batch_id", batchId));
@@ -168,7 +172,7 @@ public class VideoToolService {
             throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("message", "必须选择技能包"));
         }
         Map<String, Object> skill = Catalog.VIDEO_SKILLS.stream()
-                .filter(s -> Rows.str(s, "key").equals(skillPack)).findFirst().orElse(null);
+                .filter(s -> Rows.strEq(s, "key", skillPack)).findFirst().orElse(null);
         if (skill == null) {
             throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("message", "技能包不存在", "skill_pack", skillPack));
         }
@@ -212,7 +216,7 @@ public class VideoToolService {
             throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("message", "必须选择场景模板"));
         }
         Map<String, Object> template = Catalog.STONE_SCENE_TEMPLATES.stream()
-                .filter(t -> Rows.str(t, "key").equals(sceneKey)).findFirst().orElse(null);
+                .filter(t -> Rows.strEq(t, "key", sceneKey)).findFirst().orElse(null);
         if (template == null) {
             throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("message", "场景模板不存在", "scene_key", sceneKey));
         }
@@ -247,7 +251,7 @@ public class VideoToolService {
     // 行内注释12：精修队列 —— 色差超阈值需重生，重试失败转人工。
     public Map<String, Object> refineStone(String userId, String jobId, String note) {
         Map<String, Object> job = store.find(TaskOrchestrator.T_TASKS, jobId).orElse(null);
-        if (job == null || !Rows.str(job, "user_id").equals(userId)) {
+        if (job == null || !Rows.strEq(job, "user_id", userId)) {
             throw new BizException(ErrorCode.TASK_NOT_FOUND);
         }
         String id = "ref_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
@@ -308,23 +312,39 @@ public class VideoToolService {
 
     public void deleteMaterial(String userId, String id) {
         Map<String, Object> m = store.find(T_STONE_MATERIALS, id).orElse(null);
-        if (m == null || !Rows.str(m, "user_id").equals(userId)) {
+        if (m == null || !Rows.strEq(m, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         store.delete(T_STONE_MATERIALS, id);
     }
 
     // 行内注释14：导出打包 —— 返回临时下载地址（实际由对象存储生成预签名）。
-    public Map<String, Object> exportMaterials(List<String> ids) {
-        return Rows.row("download_url", "https://cdn.local.invalid/exports/materials-"
-                + System.currentTimeMillis() + ".zip", "count", ids == null ? 0 : ids.size());
+    public Map<String, Object> exportMaterials(String userId, List<String> ids) {
+        // 行内注释14.1：只导出本人材质 —— 越权的 id 直接跳过，不报错也不泄露存在性。
+        List<Map<String, Object>> entries = new java.util.ArrayList<>();
+        if (ids != null) {
+            for (String id : ids) {
+                Map<String, Object> m = store.find(T_STONE_MATERIALS, id).orElse(null);
+                if (m != null && Rows.strEq(m, "user_id", userId)) {
+                    entries.add(Rows.row(
+                            "id", Rows.str(m, "id"),
+                            "name", Rows.str(m, "name", ""),
+                            "tags", Rows.list(m, "tags")));
+                }
+            }
+        }
+        return Rows.row(
+                "download_url", "https://cdn.local.invalid/exports/materials-"
+                        + System.currentTimeMillis() + ".zip",
+                "count", entries.size(),
+                "entries", entries);
     }
 
     // 行内注释15：厂家介绍视频 —— 口播秒数按 script.length/4 估算（中文约 4 字/秒）。
     public Map<String, Object> factoryVideo(String userId, String avatarId, List<String> siteAssetIds,
             String templateId, Map<String, Object> variables, String spec) {
         Map<String, Object> avatar = store.find(DigitalHumanService.T_AVATARS, avatarId).orElse(null);
-        if (avatar == null || !Rows.str(avatar, "user_id").equals(userId)) {
+        if (avatar == null || !Rows.strEq(avatar, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND, Map.of("message", "数字人形象不存在"));
         }
         if (!Rows.bool(avatar, "standardized")) {

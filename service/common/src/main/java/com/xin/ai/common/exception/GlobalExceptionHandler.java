@@ -6,6 +6,7 @@ import com.xin.ai.common.dto.PageResult;
 import java.util.Map;
 import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -40,6 +41,20 @@ public class GlobalExceptionHandler {
                 ErrorCode.COMMON_BAD_REQUEST.code(),
                 ErrorCode.COMMON_BAD_REQUEST.message(),
                 details,
+                MDC.get("traceId"));
+        return ResponseEntity.status(ErrorCode.COMMON_BAD_REQUEST.httpStatus())
+                .body(new ErrorResponse(body));
+    }
+
+    // 行内注释4.1：请求体解析失败（JSON 语法错 / 类型不匹配）——
+    //             这是客户端的参数问题，必须回 400 而不是掉进兜底 500。
+    //             否则前端只会看到「服务器内部错误」，用户不知道怎么改。
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException e) {
+        ErrorResponse.ErrorBody body = new ErrorResponse.ErrorBody(
+                ErrorCode.COMMON_BAD_REQUEST.code(),
+                "请求体格式不正确",
+                Map.of("message", "请求体格式不正确"),
                 MDC.get("traceId"));
         return ResponseEntity.status(ErrorCode.COMMON_BAD_REQUEST.httpStatus())
                 .body(new ErrorResponse(body));

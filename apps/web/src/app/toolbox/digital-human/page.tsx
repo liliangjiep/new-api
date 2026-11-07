@@ -14,6 +14,15 @@ import {
 import { AssetPickerModal, type AssetItem } from "@/components/features/AssetPickerModal";
 import { useToast } from "@/components/features/ToastHost";
 import { cn } from "@/lib/cn";
+import {
+  createAvatar,
+  standardizeAvatar,
+  submitDigitalHumanJob,
+  submitTts,
+} from "@/lib/backend/digitalhuman";
+import { waitTask } from "@/lib/backend/tasks";
+import { uploadAsset } from "@/lib/backend/assets";
+import { ApiError } from "@/lib/api";
 
 /**
  * 原站 /toolbox/digital-human（2026-10-30 实测逐字复刻）
@@ -79,7 +88,12 @@ export default function DigitalHumanPage() {
   const { push } = useToast();
   const router = useRouter();
   const [avatar, setAvatar] = useState<string | null>(null);
+  /** 行内注释6：形象对应的资产 ID —— 创建形象要传 asset_id。 */
+  const [avatarAssetId, setAvatarAssetId] = useState<string | null>(null);
+  const [avatarId, setAvatarId] = useState<string | null>(null);
   const [audio, setAudio] = useState<string | null>(null);
+  /** 行内注释7：音频资产 ID —— 口播任务要传 audio_asset_id。 */
+  const [audioAssetId, setAudioAssetId] = useState<string | null>(null);
   const [script, setScript] = useState("");
   const [tab, setTab] = useState("preview");
   const [busy, setBusy] = useState(false);
@@ -88,20 +102,95 @@ export default function DigitalHumanPage() {
 
   const ready = !!avatar && !!audio;
 
-  const gen = () => {
+  const gen = async () => {
     if (!ready) {
       push({ tone: "warning", title: "请先确认形象与音频" });
       return;
     }
     setBusy(true);
-    setTimeout(() => {
-      setBusy(false);
+    try {
+      // 行内注释8：没有现成形象时，先用所选素材建形象并标准化（标准化后才能提交口播）。
+      let avId = avatarId;
+      if (!avId) {
+        if (!avatarAssetId) {
+          push({ tone: "warning", title: "请先选择形象素材" });
+          return;
+        }
+        const created = await createAvatar({
+          asset_id: avatarAssetId,
+          name: avatar ?? "数字人形象",
+        });
+        avId = created.id;
+        setAvatarId(created.id);
+        await standardizeAvatar(created.id);
+      }
+
+      // 行内注释9：上传音频走素材资产；生成音频走 TTS 任务，拿到 URL 后再提交口播。
+      let audioAsset = audioAssetId;
+      if (!audioAsset && audio === "生成音频") {
+        if (!script.trim()) {
+          push({ tone: "warning", title: "请先输入口播文案" });
+          return;
+        }
+        const tts = await submitTts({ text: script.trim() });
+        const ttsDone = await waitTask(tts.id);
+        if (ttsDone.status !== "succeeded") {
+          push({
+            tone: "warning",
+            title: "语音合成失败",
+            description: ttsDone.fail_reason || ttsDone.error_code || "上游未返回音频",
+          });
+          return;
+        }
+        const url = ttsDone.result?.result_urls?.[0];
+        if (!url) {
+          push({ tone: "warning", title: "语音合成未返回音频地址" });
+          return;
+        }
+        // 行内注释9.1：TTS 产出的音频要落成资产，口播任务才能按 asset_id 引用。
+        const blob = await fetch(url).then((r) => r.blob()).catch(() => null);
+        if (blob) {
+          const rec = await uploadAsset(
+            new File([blob], `tts-${Date.now()}.mp3`, { type: "audio/mpeg" }),
+            "数字人音频",
+          );
+          audioAsset = rec.id;
+          setAudioAssetId(rec.id);
+        }
+      }
+
+      if (!audioAsset) {
+        push({ tone: "warning", title: "请先上传音频素材" });
+        return;
+      }
+
+      const job = await submitDigitalHumanJob({
+        avatar_id: avId,
+        audio_asset_id: audioAsset,
+        script: script.trim(),
+        mode: "口播",
+      });
       push({
         tone: "success",
         title: "已提交数字人任务",
         description: "在右侧队列查看进度",
       });
-    }, 1600);
+      const done = await waitTask(job.id);
+      if (done.status === "succeeded") {
+        push({ tone: "success", title: "数字人成片已生成" });
+      } else {
+        push({
+          tone: "warning",
+          title: "生成失败",
+          description: done.fail_reason || done.error_code || "上游未返回结果",
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "提交失败，请稍后重试";
+      push({ tone: "danger", title: "提交失败", description: msg });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -329,7 +418,10 @@ export default function DigitalHumanPage() {
       maxSelect={1}
       onClose={() => setAvatarPickerOpen(false)}
       onConfirm={(assets: AssetItem[]) => {
-        if (assets[0]) setAvatar(assets[0].name);
+        if (assets[0]) {
+          setAvatar(assets[0].name);
+          setAvatarAssetId(assets[0].id);
+        }
       }}
     />
     <AssetPickerModal
@@ -340,7 +432,10 @@ export default function DigitalHumanPage() {
       maxSelect={1}
       onClose={() => setAudioPickerOpen(false)}
       onConfirm={(assets: AssetItem[]) => {
-        if (assets[0]) setAudio(assets[0].name);
+        if (assets[0]) {
+          setAudio(assets[0].name);
+          setAudioAssetId(assets[0].id);
+        }
       }}
     />
     </>

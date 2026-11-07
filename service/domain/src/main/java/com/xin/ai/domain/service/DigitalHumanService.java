@@ -31,7 +31,7 @@ public class DigitalHumanService {
 
     // 行内注释4：形象列表 —— standardized_only=true 时只返回已标准化的。
     public List<Map<String, Object>> listAvatars(String userId, boolean standardizedOnly) {
-        return store.listWhere(T_AVATARS, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        return store.listWhere(T_AVATARS, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .filter(r -> !standardizedOnly || Rows.bool(r, "standardized"))
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .map(a -> Rows.row(
@@ -69,7 +69,7 @@ public class DigitalHumanService {
 
     // 行内注释6：音色列表与克隆 —— 克隆需提供参考音频资产。
     public List<Map<String, Object>> listVoices(String userId) {
-        return store.listWhere(T_VOICES, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        return store.listWhere(T_VOICES, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .map(v -> Rows.row(
                         "id", Rows.str(v, "id"),
                         "name", Rows.str(v, "name", ""),
@@ -94,7 +94,7 @@ public class DigitalHumanService {
 
     // 行内注释7：音色槽位 —— 用户可保存的常用音色位。
     public List<Map<String, Object>> listSlots(String userId) {
-        return store.listWhere(T_SLOTS, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        return store.listWhere(T_SLOTS, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .map(s -> Rows.row(
                         "id", Rows.str(s, "id"),
                         "voice_id", Rows.str(s, "voice_id"),
@@ -114,7 +114,7 @@ public class DigitalHumanService {
 
     // 行内注释8：授权文件 —— 肖像与声音授权登记。
     public List<Map<String, Object>> listAuthorizations(String userId) {
-        return store.listWhere(T_AUTHORIZATIONS, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        return store.listWhere(T_AUTHORIZATIONS, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .map(a -> Rows.row(
                         "id", Rows.str(a, "id"),
                         "type", Rows.str(a, "type", "portrait"),
@@ -139,7 +139,7 @@ public class DigitalHumanService {
 
     private Map<String, Object> requireOwned(String table, String userId, String id) {
         Map<String, Object> row = store.find(table, id).orElse(null);
-        if (row == null || !Rows.str(row, "user_id").equals(userId)) {
+        if (row == null || !Rows.strEq(row, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         return row;

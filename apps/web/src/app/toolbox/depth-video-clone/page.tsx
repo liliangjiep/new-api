@@ -18,6 +18,9 @@ import { AssetPickerModal, type AssetItem } from "@/components/features/AssetPic
 import { MentionEditor } from "@/components/features/MentionEditor";
 import { useToast } from "@/components/features/ToastHost";
 import { cn } from "@/lib/cn";
+import { submitDepthClone } from "@/lib/backend/tools";
+import { waitTask } from "@/lib/backend/tasks";
+import { ApiError } from "@/lib/api";
 
 /**
  * 原站 /toolbox/depth-video-clone（2026-10-30 实测逐字复刻）
@@ -343,6 +346,8 @@ export default function DepthVideoClonePage() {
   const [videoName, setVideoName] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoThumb, setVideoThumb] = useState<string | null>(null);
+  /** 行内注释6：参考视频的资产 ID —— 提交时后端要的是 ast_* 资产 ID，不是 URL。 */
+  const [videoAssetId, setVideoAssetId] = useState<string | null>(null);
   const [videoPickerOpen, setVideoPickerOpen] = useState(false);
   const [slotPickerKey, setSlotPickerKey] = useState<string | null>(null);
   const [slotAssets, setSlotAssets] = useState<Record<string, AssetItem[]>>({});
@@ -352,6 +357,7 @@ export default function DepthVideoClonePage() {
 
   const applyVideoAsset = (a: AssetItem) => {
     setVideoName(a.name);
+    setVideoAssetId(a.id);
     // 本地上传是 blob 视频可直接播；资产库示例用封面图占位
     const playable = /\.mp4|\.mov|\.webm|^blob:/i.test(a.url);
     setVideoUrl(a.url);
@@ -363,11 +369,16 @@ export default function DepthVideoClonePage() {
     setVideoName(null);
     setVideoUrl(null);
     setVideoThumb(null);
+    setVideoAssetId(null);
   };
 
-  const gen = () => {
+  const gen = async () => {
     if (!videoUrl) {
       push({ tone: "warning", title: "请先上传参考视频" });
+      return;
+    }
+    if (!videoAssetId) {
+      push({ tone: "warning", title: "请先从资产库选择参考视频" });
       return;
     }
     if (!prompt.trim()) {
@@ -375,14 +386,38 @@ export default function DepthVideoClonePage() {
       return;
     }
     setBusy(true);
-    setTimeout(() => {
-      setBusy(false);
+    try {
+      const task = await submitDepthClone({
+        mode,
+        ref_video_asset_id: videoAssetId,
+        ref_image_asset_ids: Object.values(slotAssets)
+          .flat()
+          .map((a) => a.id),
+        prompt: prompt.trim(),
+        model,
+        spec,
+      });
       push({
         tone: "success",
         title: "已提交复刻任务",
         description: "在右侧队列查看进度",
       });
-    }, 1800);
+      const done = await waitTask(task.id);
+      if (done.status === "succeeded") {
+        push({ tone: "success", title: "复刻完成" });
+      } else {
+        push({
+          tone: "warning",
+          title: "复刻失败",
+          description: done.fail_reason || done.error_code || "上游未返回结果",
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "提交失败，请稍后重试";
+      push({ tone: "danger", title: "提交失败", description: msg });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

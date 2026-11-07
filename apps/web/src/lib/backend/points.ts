@@ -38,15 +38,26 @@ export async function getLedger(query?: {
   });
 }
 
+/**
+ * 充值订单 —— 与后端 RechargeService.view 的字段一一对应。
+ * 行内注释1.1：status 是原始码（pending/paid/closed/refunded），
+ *              中文由前端 STATUS_LABEL 映射；status_label 是后端冗余给的兜底文案。
+ */
 export interface RechargeOrder {
   id: string;
   order_no: string;
+  no: string;
+  package_name: string;
+  package_code: string;
   credits: number;
   bonus?: number;
-  amount_yuan?: number;
+  amount: number;
   status: string;
+  status_label?: string;
+  pay_method?: string;
   pay_url?: string;
   created_at: string;
+  paid_at?: string;
 }
 
 /** 创建充值订单 —— 幂等键必带。 */

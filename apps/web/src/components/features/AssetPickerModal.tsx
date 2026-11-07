@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
+import { listAssets, uploadAsset, type AssetRecord } from "@/lib/backend/assets";
+import { ApiError } from "@/lib/api";
 
 export interface AssetItem {
   id: string;
@@ -15,26 +17,25 @@ export interface AssetItem {
   kind: "video" | "image" | "audio";
 }
 
-const MOCK_VIDEOS: AssetItem[] = [
-  { id: "v1", name: "9月12日.mp4", url: "/images/gen/example-video-1.png", thumb: "/images/gen/example-video-1.png", duration: "50s", meta: "10/30", source: "upload", kind: "video" },
-  { id: "v2", name: "产品口播-01.mp4", url: "/images/gen/example-video-1.png", thumb: "/images/gen/example-video-1.png", duration: "32s", meta: "10/28", source: "upload", kind: "video" },
-  { id: "v3", name: "AI生成-街景.mp4", url: "/images/gen/example-video-1.png", thumb: "/images/gen/example-video-1.png", duration: "15s", meta: "10/25", source: "ai", kind: "video" },
-];
-
-const MOCK_IMAGES: AssetItem[] = [
-  { id: "i1", name: "商品白底-01.png", url: "/images/gen/skill-product-white-background.jpg", thumb: "/images/gen/skill-product-white-background.jpg", meta: "10/30", source: "upload", kind: "image" },
-  { id: "i2", name: "人物-棚拍-02.jpg", url: "/images/gen/skill-model-product-try-on.jpg", thumb: "/images/gen/skill-model-product-try-on.jpg", meta: "10/29", source: "upload", kind: "image" },
-  { id: "i3", name: "背景-客厅.jpg", url: "/images/gen/skill-background-change.jpg", thumb: "/images/gen/skill-background-change.jpg", meta: "10/28", source: "upload", kind: "image" },
-  { id: "i4", name: "AI-场景种草.jpg", url: "/images/gen/skill-ecommerce-scene-seeding.jpg", thumb: "/images/gen/skill-ecommerce-scene-seeding.jpg", meta: "10/25", source: "ai", kind: "image" },
-  { id: "i5", name: "AI-电商卖点.jpg", url: "/images/gen/skill-ecommerce-spoken-selling.jpg", thumb: "/images/gen/skill-ecommerce-spoken-selling.jpg", meta: "10/24", source: "ai", kind: "image" },
-  { id: "i6", name: "商品精修-03.jpg", url: "/images/gen/skill-product-refine.jpg", thumb: "/images/gen/skill-product-refine.jpg", meta: "10/22", source: "upload", kind: "image" },
-];
-
-const MOCK_AUDIOS: AssetItem[] = [
-  { id: "a1", name: "口播-女声01.mp3", url: "", duration: "00:32", meta: "10/30", source: "upload", kind: "audio" },
-  { id: "a2", name: "BGM-轻快.mp3", url: "", duration: "01:05", meta: "10/28", source: "upload", kind: "audio" },
-  { id: "a3", name: "AI配音-磁性男声.mp3", url: "", duration: "00:48", meta: "10/25", source: "ai", kind: "audio" },
-];
+/**
+ * 后端资产 → 选择器条目。
+ * 行内注释1：source 由后端给出（upload / ai）—— 不再由前端猜测。
+ * 行内注释2：thumb 为空时回落到 url；都没有就渲染占位块（音频常见）。
+ */
+function toItem(a: AssetRecord): AssetItem {
+  const kind = (a.kind === "video" || a.kind === "audio" ? a.kind : "image") as AssetItem["kind"];
+  const created = a.created_at ? a.created_at.slice(5, 10).replace("-", "/") : "";
+  return {
+    id: a.id,
+    name: a.name || a.id,
+    url: a.url ?? "",
+    thumb: a.thumb || a.url || "",
+    duration: a.duration ? `${a.duration}s` : "",
+    meta: created,
+    source: a.source === "ai" ? "ai" : "upload",
+    kind,
+  };
+}
 
 export function AssetPickerModal({
   open,
@@ -60,6 +61,9 @@ export function AssetPickerModal({
   const [selected, setSelected] = useState<string[]>([]);
   const [extra, setExtra] = useState<AssetItem[]>([]);
   const [libOpen, setLibOpen] = useState(false);
+  const [remote, setRemote] = useState<AssetItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => setMounted(true), []);
@@ -67,16 +71,37 @@ export function AssetPickerModal({
     if (open) {
       setQuery("");
       setSourceTab("all");
-      setSelected([]);
     }
-  }, [open ]);
+    setSelected([]);
+  }, [open]);
+
+  /**
+   * 行内注释3：拉真实资产 —— 之前是写死的 MOCK_VIDEOS/MOCK_IMAGES/MOCK_AUDIOS，
+   *             那些假 id（v1/i1/a1）提交到后端必然 asset_not_found。
+   */
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await listAssets({ page: 1, pageSize: 100 });
+      setRemote((res.data ?? []).map(toItem));
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "加载素材失败";
+      // 行内注释3.1：加载失败不要静默 —— 用户要知道素材库没连上。
+      console.warn("[AssetPickerModal] 加载素材失败:", msg);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) void load();
+  }, [open, load]);
 
   const base = useMemo(() => {
-    if (kind === "video") return MOCK_VIDEOS;
-    if (kind === "image") return MOCK_IMAGES;
-    if (kind === "media") return [...MOCK_VIDEOS, ...MOCK_IMAGES];
-    return MOCK_AUDIOS;
-  }, [kind]);
+    // 行内注释4：media 类型要同时取视频与图片 —— 分两次查再合并。
+    if (kind === "media") return remote;
+    return remote.filter((a) => a.kind === kind);
+  }, [kind, remote]);
 
   const all = useMemo(() => [...extra, ...base], [extra, base]);
   const filtered = useMemo(
@@ -101,35 +126,34 @@ export function AssetPickerModal({
     });
   };
 
-  const handleFiles = (files: FileList | null) => {
+  /**
+   * 行内注释5：上传走真实两段式 —— upload-policy → 直传 → complete，
+   * 完成后刷新列表，让新素材立刻可��。
+   */
+  const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const adds: AssetItem[] = Array.from(files)
-      .slice(0, 8)
-      .map((f, i) => {
-        const url = URL.createObjectURL(f);
-        const isImg = f.type.startsWith("image/");
-        const isAud = f.type.startsWith("audio/");
-        const isVid = f.type.startsWith("video/");
-        const k: AssetItem["kind"] =
-          kind === "video" ? "video" : kind === "audio" ? "audio" : kind === "image" ? "image" : isVid ? "video" : isAud ? "audio" : "image";
-        return {
-          id: `local-${Date.now()}-${i}`,
-          name: f.name,
-          url,
-          thumb: isImg || f.type.startsWith("video/") ? url : undefined,
-          duration: "",
-          meta: "刚刚",
-          source: "upload" as const,
-          kind: k,
-        };
+    const list = Array.from(files).slice(0, 8);
+    setUploading(true);
+    try {
+      const uploaded: AssetItem[] = [];
+      for (const f of list) {
+        const rec = await uploadAsset(f);
+        uploaded.push(toItem(rec));
+      }
+      setExtra((p) => [...uploaded, ...p]);
+      setSelected((prev) => {
+        const ids = uploaded.map((a) => a.id);
+        if (maxSelect === 1) return ids.length ? [ids[0]] : prev;
+        return [...ids, ...prev].slice(0, maxSelect);
       });
-    setExtra((p) => [...adds, ...p]);
-    setSelected((prev) => {
-      const ids = adds.map((a) => a.id);
-      if (maxSelect === 1) return [ids[0]];
-      return [...ids, ...prev].slice(0, maxSelect);
-    });
-    setSourceTab("upload");
+      setSourceTab("upload");
+      await load();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "上传失败";
+      console.error("[AssetPickerModal] 上传失败:", msg);
+    } finally {
+      setUploading(false);
+    }
   };
 
   if (!open || !mounted) return null;
@@ -203,19 +227,19 @@ export function AssetPickerModal({
 
         {/* —— 内容 —— */}
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-          <input ref={fileRef} type="file" accept={accept} multiple={maxSelect > 1} className="sr-only" onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
+          <input ref={fileRef} type="file" accept={accept} multiple={maxSelect > 1} className="sr-only" onChange={(e) => { void handleFiles(e.target.files); e.target.value = ""; }} />
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {/* 上传卡 */}
             <div className="flex aspect-[3/4] flex-col overflow-hidden rounded-xl border border-dashed border-line bg-[#fafafa]">
-              <button type="button" onClick={() => fileRef.current?.click()} className="flex min-h-0 flex-1 flex-col items-center justify-center px-3 text-center">
-                <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-2xl font-light leading-none text-foreground shadow-sm">+</span>
-                <span className="mt-2 text-xs font-semibold text-foreground">上传素材</span>
+              <button type="button" disabled={uploading} onClick={() => fileRef.current?.click()} className="flex min-h-0 flex-1 flex-col items-center justify-center px-3 text-center disabled:opacity-50">
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-2xl font-light leading-none text-foreground shadow-sm">{uploading ? "…" : "+"}</span>
+                <span className="mt-2 text-xs font-semibold text-foreground">{uploading ? "上传中…" : "上传素材"}</span>
                 <span className="mt-1 text-[10px] leading-4 text-muted">{kind === "video" ? "建议选择 4-60 秒的视频。" : kind === "image" ? "支持 PNG / JPG / WebP。" : "支持 MP3 / WAV / M4A。"}</span>
               </button>
               <div className="flex shrink-0 border-t border-line">
-                <button type="button" onClick={() => fileRef.current?.click()} className="h-9 flex-1 text-xs font-medium text-foreground transition hover:bg-black/[0.03]">上传文件</button>
+                <button type="button" disabled={uploading} onClick={() => fileRef.current?.click()} className="h-9 flex-1 text-xs font-medium text-foreground transition hover:bg-black/[0.03] disabled:opacity-50">上传文件</button>
                 <span className="w-px bg-line" aria-hidden />
-                <button type="button" onClick={() => fileRef.current?.click()} className="h-9 flex-1 text-xs font-medium text-muted transition hover:bg-black/[0.03] hover:text-foreground">{kind === "audio" ? "录音" : "拍照"}</button>
+                <button type="button" disabled={uploading} onClick={() => fileRef.current?.click()} className="h-9 flex-1 text-xs font-medium text-muted transition hover:bg-black/[0.03] hover:text-foreground disabled:opacity-50">{kind === "audio" ? "录音" : "拍照"}</button>
               </div>
             </div>
 
@@ -253,7 +277,8 @@ export function AssetPickerModal({
               );
             })}
           </div>
-          {filtered.length === 0 ? <p className="py-10 text-center text-xs text-muted">没有找到匹配的素材，换个关键词或上传新的素材吧。</p> : null}
+          {filtered.length === 0 && !loading ? <p className="py-10 text-center text-xs text-muted">没有找到匹配的素材，换个关键词或上传新的素材吧。</p> : null}
+          {loading ? <p className="py-10 text-center text-xs text-muted">正在加载素材…</p> : null}
         </div>
 
         {/* —— 底部 —— */}

@@ -29,7 +29,7 @@ public class CanvasService {
     }
 
     public List<Map<String, Object>> list(String userId) {
-        return store.listWhere(T_CANVASES, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        return store.listWhere(T_CANVASES, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .sorted((a, b) -> Rows.str(b, "updated_at").compareTo(Rows.str(a, "updated_at")))
                 .map(c -> Rows.row(
                         "id", Rows.str(c, "id"),
@@ -95,7 +95,7 @@ public class CanvasService {
 
     public List<Map<String, Object>> versions(String userId, String canvasId) {
         requireOwned(userId, canvasId);
-        return store.listWhere(T_VERSIONS, r -> Rows.str(r, "canvas_id").equals(canvasId)).stream()
+        return store.listWhere(T_VERSIONS, r -> Rows.strEq(r, "canvas_id", canvasId)).stream()
                 .sorted((a, b) -> Rows.num(b, "version") - Rows.num(a, "version"))
                 .map(v -> Rows.row(
                         "version", Rows.num(v, "version"),
@@ -149,7 +149,7 @@ public class CanvasService {
 
     private Map<String, Object> requireOwned(String userId, String id) {
         Map<String, Object> c = store.find(T_CANVASES, id).orElse(null);
-        if (c == null || !Rows.str(c, "user_id").equals(userId)) {
+        if (c == null || !Rows.strEq(c, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         return c;

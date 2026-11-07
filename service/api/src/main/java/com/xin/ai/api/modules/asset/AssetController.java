@@ -3,11 +3,17 @@ package com.xin.ai.api.modules.asset;
 import com.xin.ai.api.web.BaseController;
 import com.xin.ai.common.dto.ApiResponse;
 import com.xin.ai.common.dto.PageResult;
+import com.xin.ai.common.exception.BizException;
+import com.xin.ai.common.exception.ErrorCode;
 import com.xin.ai.common.security.AuthContext;
 import com.xin.ai.common.security.CurrentUser;
+import com.xin.ai.domain.repository.Rows;
 import com.xin.ai.domain.service.AssetService;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -91,6 +97,15 @@ public class AssetController extends BaseController {
         return list(assets.listGroups(user.userId()));
     }
 
+    /**
+     * 公共素材库 —— 展示审核通过并被运营授权对外的素材。
+     * 行内注释2.1：scope 过滤是「授权范围」维度（全员 / 行业），不是用户归属维度。
+     */
+    @GetMapping("/public-assets")
+    public ApiResponse<List<Map<String, Object>>> publicAssets(@RequestParam(required = false) String scope) {
+        return list(assets.listPublicAssets(scope));
+    }
+
     /** 新建分组。 */
     @PostMapping("/asset-groups")
     public ApiResponse<Map<String, Object>> createGroup(@CurrentUser AuthContext.Principal user,
@@ -104,6 +119,61 @@ public class AssetController extends BaseController {
         return ok();
     }
 
+    /**
+     * 导出打包 —— 返回真实可下载的 zip 地址。
+     * 行内注释3：本地无对象存储时后端自托管 zip，下载走下方 /exports/{id}/download。
+     */
+    @PostMapping("/assets/exports")
+    public ApiResponse<Map<String, Object>> export(@CurrentUser AuthContext.Principal user,
+            @RequestBody ExportRequest req) {
+        return ok(assets.exportAssets(user.userId(), req.ids(), req.label()));
+    }
+
+    /**
+     * 下载导出包 —— 直接回 zip 字节流。
+     * 行内注释3.1：清单里记的是资产元信息 + URL；没有对象存储时 zip 内放 manifest.json，
+     *             接入存储后改为把真实文件字节写进 zip。
+     */
+    @GetMapping("/assets/exports/{id}/download")
+    public ResponseEntity<byte[]> downloadExport(@CurrentUser AuthContext.Principal user,
+            @PathVariable String id) {
+        Map<String, Object> manifest = assets.findExport(user.userId(), id);
+        byte[] body = buildZip(manifest);
+        String filename = Rows.str(manifest, "filename", "export.zip");
+        // 行内注释3.2：中文文件名必须按 RFC 5987 编码 ——
+        //             Tomcat 10.1 会拒绝标准头里的非 ISO-8859-1 字节（直接抛 IllegalArgumentException），
+        //             所以这里用 ContentDisposition.builder(...).filename(name, UTF_8)，
+        //             它会同时产出 filename="..."(ASCII 兜底) 与 filename*=UTF-8''...(真实名)。
+        ContentDisposition disposition = ContentDisposition.attachment()
+                .filename(filename, java.nio.charset.StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .header(HttpHeaders.CONTENT_TYPE, "application/zip")
+                .body(body);
+    }
+
+    /** 生成 zip 字节流 —— 含 manifest.json 与一个 README。 */
+    private byte[] buildZip(Map<String, Object> manifest) {
+        try (java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(bos)) {
+            zos.putNextEntry(new java.util.zip.ZipEntry("manifest.json"));
+            zos.write(String.valueOf(manifest.get("entries")).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zos.closeEntry();
+            zos.putNextEntry(new java.util.zip.ZipEntry("README.txt"));
+            zos.write(("导出时间：" + manifest.get("created_at")
+                    + "\n资产数量：" + manifest.get("count")
+                    + "\n说明：本地开发环境无对象存储，包内含资产清单与原始下载地址。\n")
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zos.closeEntry();
+            zos.finish();
+            return bos.toByteArray();
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.COMMON_INTERNAL_ERROR,
+                    Map.of("message", "导出包生成失败：" + e.getMessage()));
+        }
+    }
+
     // ---------------- 请求体 ----------------
 
     public record UploadPolicyRequest(String filename, Long size, String contentType, String kind, String group) {}
@@ -115,4 +185,6 @@ public class AssetController extends BaseController {
     public record BatchDeleteRequest(List<String> ids) {}
 
     public record CreateGroupRequest(String name) {}
+
+    public record ExportRequest(List<String> ids, String label) {}
 }

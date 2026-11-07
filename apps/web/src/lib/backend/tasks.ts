@@ -122,6 +122,28 @@ export async function listTasks(query?: {
 }
 
 /**
+ * 等待既有任务到终态（工具类接口提交后自带任务 id，这里只轮询）。
+ * 行内注释3.1：工具类接口（/tools/*）返回的也是统一任务对象，所以复用同一套轮询逻辑。
+ */
+export async function waitTask(
+  id: string,
+  hooks?: { onProgress?: (t: TaskRecord) => void; signal?: AbortSignal },
+): Promise<TaskRecord> {
+  const deadline = Date.now() + 10 * 60 * 1000;
+  let cur = await getTask(id);
+  while (Date.now() < deadline) {
+    if (hooks?.signal?.aborted) throw new Error("已取消");
+    if (cur.status === "succeeded" || cur.status === "failed" || cur.status === "canceled") {
+      return cur;
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+    cur = await getTask(id);
+    hooks?.onProgress?.(cur);
+  }
+  return cur;
+}
+
+/**
  * 提交并等到终态。
  * 行内注释3：真实中转站生成需要 30s~3min，这里用轮询（与后端 TaskExecutor 内部轮询并行，
  *             前端只是拿最终态与进度），SSE 不可用时自动降级为轮询。

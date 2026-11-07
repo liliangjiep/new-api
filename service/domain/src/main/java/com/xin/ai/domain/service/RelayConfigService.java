@@ -104,6 +104,68 @@ public class RelayConfigService {
                 status, operator, id);
     }
 
+    // ---------------- 熔断状态 ----------------
+
+    /**
+     * 读取熔断状态快照。
+     * 行内注释4：熔断状态落库（model_channels.circuit_state）——
+     *             多实例部署时每个实例都要看到同一份状态，
+     *             否则每个实例都以为别的实例还活着，会同时猛打一个已经挂掉的站。
+     * 行内注释4.1：只有「状态」跨实例共享，「冷却到期时间」仍在内存里 ——
+     *             那是运行时状态，落库还得定时清理，不值当。
+     */
+    public CircuitState circuitState(String channelId) {
+        if (channelId == null || channelId.isBlank()) {
+            return null;
+        }
+        try {
+            List<CircuitState> rows = jdbc.query(
+                    "SELECT circuit_state, consecutive_failures FROM model_channels WHERE id = ?",
+                    (rs, i) -> new CircuitState(
+                            rs.getString("circuit_state"),
+                            rs.getInt("consecutive_failures")),
+                    channelId);
+            return rows.isEmpty() ? null : rows.get(0);
+        } catch (Exception e) {
+            log.debug("读熔断状态失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 记录一次成功 —— 熔断恢复，失败计数清零。
+     */
+    public void markChannelSuccess(String channelId) {
+        try {
+            jdbc.update("UPDATE model_channels SET circuit_state='closed', consecutive_failures=0, "
+                    + "updated_at=NOW() WHERE id=?", channelId);
+        } catch (Exception e) {
+            log.debug("写熔断成功状态失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 记录一次失败 —— 连续失败达阈值则熔断（open）并写冷却到期时间。
+     * 行内注释4.2：连续失败达阈值即把该站标记 open，后续请求直接跳过。
+     */
+    public void markChannelFailure(String channelId, int consecutiveFailures, int threshold) {
+        try {
+            String state = consecutiveFailures >= threshold ? "open" : "closed";
+            jdbc.update("UPDATE model_channels SET circuit_state=?, consecutive_failures=?, "
+                    + "updated_at=NOW() WHERE id=?", state, consecutiveFailures, channelId);
+        } catch (Exception e) {
+            log.debug("写熔断失败状态失败: {}", e.getMessage());
+        }
+    }
+
+    /** 熔断状态值对象。 */
+    public record CircuitState(String state, int consecutiveFailures) {
+        /** 是否处于熔断（open）状态。 */
+        public boolean isOpen() {
+            return "open".equalsIgnoreCase(state);
+        }
+    }
+
     // ---------------- 接入点 ----------------
 
     public List<Map<String, Object>> listEndpoints() {

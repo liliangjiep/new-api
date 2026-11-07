@@ -59,6 +59,21 @@ public class MemStore implements DataStore {
         return list(type).stream().filter(filter).toList();
     }
 
+    /**
+     * 按类型前缀批量查询 —— 内存实现直接扫全部桶。
+     * 行内注释1：跨用户聚合用（如全站积分流水 point_ledger_*）。
+     */
+    @Override
+    public List<Map<String, Object>> listByTypePrefix(String prefix) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        byType.forEach((type, bucket) -> {
+            if (type != null && type.startsWith(prefix)) {
+                bucket.values().forEach(v -> out.add(new LinkedHashMap<>(v)));
+            }
+        });
+        return out;
+    }
+
     @Override
     public long countWhere(String type, Predicate<Map<String, Object>> filter) {
         return listWhere(type, filter).size();

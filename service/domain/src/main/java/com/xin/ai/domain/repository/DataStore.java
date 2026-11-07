@@ -28,6 +28,13 @@ public interface DataStore {
     /** 条件查询。 */
     List<Map<String, Object>> listWhere(String type, Predicate<Map<String, Object>> filter);
 
+    /**
+     * 按类型前缀批量查询 —— 用于「跨用户」聚合。
+     * 行内注释1：积分流水按用户分表（point_ledger_{userId}），
+     *            后台运营视角要看全站流水，就得按前缀把分散的行捞出来。
+     */
+    List<Map<String, Object>> listByTypePrefix(String prefix);
+
     /** 条件计数。 */
     long countWhere(String type, Predicate<Map<String, Object>> filter);
 

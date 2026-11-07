@@ -111,6 +111,25 @@ public class MySqlDataStore implements DataStore {
     }
 
     @Override
+    public List<Map<String, Object>> listByTypePrefix(String prefix) {
+        String sql = "SELECT data FROM entity_rows WHERE entity_type LIKE ?";
+        List<Map<String, Object>> out = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, prefix.replace("%", "\\%").replace("_", "\\_") + "%");
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(readJson(rs.getString(1)));
+                }
+            }
+            return out;
+        } catch (SQLException e) {
+            throw new IllegalStateException("listByTypePrefix failed: " + prefix
+                    + " — " + e.getMessage() + " (SQLState=" + e.getSQLState() + ")", e);
+        }
+    }
+
+    @Override
     public long countWhere(String type, Predicate<Map<String, Object>> filter) {
         return listWhere(type, filter).size();
     }

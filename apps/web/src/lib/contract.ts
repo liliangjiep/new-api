@@ -89,12 +89,22 @@ export interface RechargePackage {
 }
 
 export interface RechargeOrder {
+  id: string;
   order_no: string;
-  pay_url: string;
+  no: string;
+  package_name: string;
+  package_code: string;
   amount: number;
   credits: number;
-  package_name: string;
+  bonus?: number;
+  /** 原始状态码：pending / paid / closed / refunded。 */
   status: string;
+  /** 后端冗余的中文状态文案（前端优先用自己的映射表）。 */
+  status_label?: string;
+  pay_method?: string;
+  pay_url?: string;
+  created_at: string;
+  paid_at?: string;
 }
 
 // ---------------- 任务链 ----------------

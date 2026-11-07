@@ -55,6 +55,10 @@ public class BillingService {
         int unitPoints = Rows.num(item, "points");
         int total = unitPoints * n;
         String model = Rows.str(item, "model", modelKey);
+        // 行内注释3.1：spec 必须归一化后再算指纹 —— 调用方可能传 null/空（"随便哪个规格"），
+        //             而落库写的是定价条目解析出的真实 spec（如 "720p"）。
+        //             若指纹用传入值、落库用解析值，校验时重算必然不一致 → 误报 credit.price_changed(409)。
+        String resolvedSpec = Rows.str(item, "spec", spec == null ? "" : spec);
         // 行内注释3：过期时间截断到秒 —— 指纹计算与落库必须用同一个精度值，
         // 否则校验时重算指纹会与库里的不一致，误判为 credit.price_changed。
         LocalDateTime expiresAt = Times.now().plusMinutes(QUOTE_TTL_MINUTES).withNano(0);
@@ -74,13 +78,14 @@ public class BillingService {
         result.put("lines", lines);
         result.put("model_key", modelKey);
         result.put("model", model);
+        result.put("spec", resolvedSpec);
         result.put("expires_at", Times.iso(expiresAt));
 
-        String fingerprint = fingerprint(userId, modelKey, spec, n, params, expiresAt);
+        String fingerprint = fingerprint(userId, modelKey, resolvedSpec, n, params, expiresAt);
         result.put("fingerprint", fingerprint);
         store.put(T_QUOTES, fingerprint, Rows.row(
                 "id", fingerprint, "user_id", userId, "model_key", modelKey, "model", model,
-                "spec", Rows.str(item, "spec"),
+                "spec", resolvedSpec,
                 "count", n, "points", total, "params", params == null ? Map.of() : params,
                 "expire_at", Times.full(expiresAt), "created_at", Times.full(Times.now())));
         return result;
@@ -92,7 +97,7 @@ public class BillingService {
         if (row == null) {
             throw new BizException(ErrorCode.TASK_QUOTE_EXPIRED);
         }
-        if (!Rows.str(row, "user_id").equals(userId)) {
+        if (!Rows.strEq(row, "user_id", userId)) {
             throw new BizException(ErrorCode.TASK_QUOTE_EXPIRED);
         }
         if (Times.parse(Rows.str(row, "expire_at")).isBefore(Times.now())) {
@@ -195,7 +200,7 @@ public class BillingService {
      * 用户积分批次 —— 按到期日升序（先到期先扣）。
      */
     public List<Map<String, Object>> batches(String userId) {
-        return store.listWhere(T_BATCHES, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        return store.listWhere(T_BATCHES, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .sorted((a, b) -> Rows.str(a, "expire_at").compareTo(Rows.str(b, "expire_at")))
                 .toList();
     }
@@ -270,8 +275,8 @@ public class BillingService {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> base : Catalog.PRICING) {
             Map<String, Object> ov = overrides.stream()
-                    .filter(r -> Rows.str(r, "model_key").equals(Rows.str(base, "model_key"))
-                            && Rows.str(r, "spec").equals(Rows.str(base, "spec")))
+                    .filter(r -> Rows.strEq(r, "model_key", Rows.str(base, "model_key"))
+                            && Rows.strEq(r, "spec", Rows.str(base, "spec")))
                     .findFirst().orElse(null);
             Map<String, Object> merged = new LinkedHashMap<>(base);
             if (ov != null) {
@@ -285,7 +290,7 @@ public class BillingService {
     public Map<String, Object> findPricing(String modelKey, String spec) {
         List<Map<String, Object>> table = pricingTable();
         Map<String, Object> byKey = table.stream()
-                .filter(r -> Rows.str(r, "model_key").equals(modelKey))
+                .filter(r -> Rows.strEq(r, "model_key", modelKey))
                 .findFirst().orElse(null);
         if (byKey == null) {
             return null;
@@ -294,7 +299,7 @@ public class BillingService {
             return byKey;
         }
         return table.stream()
-                .filter(r -> Rows.str(r, "model_key").equals(modelKey) && Rows.str(r, "spec").equals(spec))
+                .filter(r -> Rows.strEq(r, "model_key", modelKey) && Rows.strEq(r, "spec", spec))
                 .findFirst().orElse(byKey);
     }
 

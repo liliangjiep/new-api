@@ -12,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -162,17 +163,35 @@ public class RelayAdapter implements ModelAdapter {
     }
 
     // 行内注释8：请求体渲染 —— 模板值为字符串时做 {key} 占位替换。
+    // 行内注释8.1：模板值可以是嵌套 Map / List —— 上游的多模态接口需要
+    //             {"video_list":[{"video_url":"{video_url}"}]} 这种结构，
+    //             所以这里对任意深度递归渲染，而不是只处理顶层字符串。
     private Map<String, Object> renderBody(RelayTemplate tpl, ModelRequest req) {
         Map<String, Object> params = req.params() == null ? Map.of() : req.params();
         Map<String, Object> out = new LinkedHashMap<>();
-        tpl.requestTemplate().forEach((k, v) -> {
-            if (v instanceof String s) {
-                out.put(k, substitute(s, params, req.endpoint()));
-            } else {
-                out.put(k, v);
-            }
-        });
+        tpl.requestTemplate().forEach((k, v) -> out.put(k, renderValue(v, params, req.endpoint())));
         return out;
+    }
+
+    /** 递归渲染 —— Map 逐键渲染、List 逐项渲染，其余走字符串占位替换。 */
+    private Object renderValue(Object value, Map<String, Object> params,
+            ModelAdapter.EndpointSnapshot endpoint) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> nested = new LinkedHashMap<>();
+            map.forEach((k, v) -> nested.put(String.valueOf(k), renderValue(v, params, endpoint)));
+            return nested;
+        }
+        if (value instanceof List<?> list) {
+            java.util.List<Object> nested = new java.util.ArrayList<>(list.size());
+            for (Object item : list) {
+                nested.add(renderValue(item, params, endpoint));
+            }
+            return nested;
+        }
+        if (value instanceof String s) {
+            return substitute(s, params, endpoint);
+        }
+        return value;
     }
 
     // 行内注释9：占位符替换 —— {prompt}/{size}/{n}/{upstream_model} 等。

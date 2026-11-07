@@ -66,6 +66,12 @@ xin:
     access-key-secret: ${XIN_SMS_ACCESS_KEY_SECRET:}
     sign-name: ${XIN_SMS_SIGN_NAME:}
     template-code: ${XIN_SMS_TEMPLATE_CODE:}
+  admin:
+    # 行内注释13：后台角色门禁 —— /api/v1/admin/** 只放行下面这些角色。
+    roles: ${XIN_ADMIN_ROLES:ADMIN,OPERATOR}
+    # 行内注释13.1：种子管理员手机号（逗号分隔）—— 命中即落 ADMIN 角色。
+    #             留空表示不自动提权，只能由已有管理员在后台手工改角色。
+    phones: ${XIN_ADMIN_PHONES:}
 
 logging:
   level:

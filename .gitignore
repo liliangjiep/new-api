@@ -12,3 +12,12 @@ service/**/build-*.txt
 
 verify-out.txt
 smoke-out.txt
+
+# 回归脚本输出与 recon 抓取产物
+.recon/
+service/e2e-*-out.txt
+service/api-run.err
+
+# 依赖目录
+node_modules/
+scripts/__pycache__/

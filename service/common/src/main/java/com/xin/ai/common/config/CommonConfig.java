@@ -14,12 +14,22 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * 行内注释3：Redis 连不上不会导致启动失败 —— RedisService 首次访问失败即降级到进程内缓存。
  */
 @Configuration
-@EnableConfigurationProperties({JwtProperties.class, SmsProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, SmsProperties.class, AdminProperties.class})
 public class CommonConfig {
 
     @Bean
     @ConditionalOnClass(StringRedisTemplate.class)
     public RedisService redisService(StringRedisTemplate template) {
         return new RedisService(template);
+    }
+
+    /**
+     * Redis 分布式令牌桶 —— 分通道限流。
+     * 行内注释4：Redis 不可用时自动降级到进程内实现（单机限流仍生效）。
+     */
+    @Bean
+    @ConditionalOnClass(StringRedisTemplate.class)
+    public com.xin.ai.common.ratelimit.RedisTokenBucket redisTokenBucket(RedisService redis) {
+        return new com.xin.ai.common.ratelimit.RedisTokenBucket(redis);
     }
 }

@@ -96,9 +96,9 @@ public class AuthService {
         Map<String, Object> row = null;
         if (!redisHit) {
             row = store.listWhere(T_CODES,
-                            r -> Rows.str(r, "phone").equals(normalized)
+                            r -> Rows.strEq(r, "phone", normalized)
                                     && !Rows.bool(r, "used")
-                                    && Rows.str(r, "code").equals(input))
+                                    && Rows.strEq(r, "code", input))
                     .stream().max((a, b) -> Rows.str(a, "created_at").compareTo(Rows.str(b, "created_at")))
                     .orElse(null);
             if (row == null) {
@@ -123,7 +123,7 @@ public class AuthService {
                 : rawKey;
         checkLoginFailure(key);
         Map<String, Object> user = store.listWhere(T_USERS,
-                        r -> Rows.str(r, "phone").equals(key) || Rows.str(r, "email").equalsIgnoreCase(key))
+                        r -> Rows.strEq(r, "phone", key) || Rows.strEqIgnoreCase(r, "email", key))
                 .stream().findFirst().orElse(null);
         if (user == null || !Rows.str(user, "password_hash", "").equals(hash(password))) {
             recordLoginFailure(key);
@@ -138,7 +138,7 @@ public class AuthService {
 
     // 行内注释9：刷新 —— 校验 refresh 存在且未过期 → 轮换（旧的作废）→ 发新 access。
     public Map<String, Object> refresh(String refreshToken) {
-        Map<String, Object> row = store.listWhere(T_REFRESH, r -> Rows.str(r, "token").equals(refreshToken == null ? "" : refreshToken))
+        Map<String, Object> row = store.listWhere(T_REFRESH, r -> Rows.strEq(r, "token", refreshToken == null ? "" : refreshToken))
                 .stream().findFirst().orElse(null);
         if (row == null || Rows.bool(row, "revoked")) {
             throw new BizException(ErrorCode.AUTH_REFRESH_INVALID);
@@ -156,27 +156,27 @@ public class AuthService {
 
     // 行内注释10：登出 —— 吊销当前 refresh（access 由短 TTL 自然过期）。
     public void logout(String refreshToken) {
-        store.listWhere(T_REFRESH, r -> Rows.str(r, "token").equals(refreshToken == null ? "" : refreshToken))
+        store.listWhere(T_REFRESH, r -> Rows.strEq(r, "token", refreshToken == null ? "" : refreshToken))
                 .forEach(r -> store.update(T_REFRESH, Rows.str(r, "id"), Rows.row("revoked", true)));
     }
 
     // 行内注释11：会话列表 —— 记录设备/IP/时间，current 标记当前会话。
     public List<Map<String, Object>> listSessions(String userId, String currentSessionId) {
-        return store.listWhere(T_SESSIONS, r -> Rows.str(r, "user_id").equals(userId)).stream()
+        return store.listWhere(T_SESSIONS, r -> Rows.strEq(r, "user_id", userId)).stream()
                 .sorted((a, b) -> Rows.str(b, "created_at").compareTo(Rows.str(a, "created_at")))
                 .map(r -> Rows.row(
                         "id", Rows.str(r, "id"),
                         "device", Rows.str(r, "device", "未知设备"),
                         "ip", Rows.str(r, "ip", ""),
                         "created_at", Rows.str(r, "created_at"),
-                        "current", Rows.str(r, "id").equals(currentSessionId)))
+                        "current", Rows.strEq(r, "id", currentSessionId)))
                 .toList();
     }
 
     // 行内注释12：下线指定会话 —— 删除会话记录 + login_version+1 使其 access 全部失效。
     public void revokeSession(String userId, String sessionId) {
         Map<String, Object> session = store.find(T_SESSIONS, sessionId).orElse(null);
-        if (session == null || !Rows.str(session, "user_id").equals(userId)) {
+        if (session == null || !Rows.strEq(session, "user_id", userId)) {
             throw new BizException(ErrorCode.COMMON_NOT_FOUND);
         }
         store.delete(T_SESSIONS, sessionId);
@@ -185,7 +185,7 @@ public class AuthService {
 
     // 行内注释13：强制下线（管理员用）。
     public void forceLogout(String userId) {
-        store.deleteWhere(T_SESSIONS, r -> Rows.str(r, "user_id").equals(userId));
+        store.deleteWhere(T_SESSIONS, r -> Rows.strEq(r, "user_id", userId));
         bumpLoginVersion(userId);
     }
 
@@ -224,7 +224,7 @@ public class AuthService {
 
     // 行内注释15：新号自动注册 —— 初始昵称取手机号后四位，初始积分按新客赠送。
     private Map<String, Object> findOrCreateByPhone(String phone) {
-        Map<String, Object> existing = store.listWhere(T_USERS, r -> Rows.str(r, "phone").equals(phone))
+        Map<String, Object> existing = store.listWhere(T_USERS, r -> Rows.strEq(r, "phone", phone))
                 .stream().findFirst().orElse(null);
         if (existing != null) {
             return existing;
@@ -252,7 +252,7 @@ public class AuthService {
     }
 
     private void checkLoginFailure(String key) {
-        Map<String, Object> fail = store.listWhere(T_LOGIN_FAIL, r -> Rows.str(r, "key").equals(key))
+        Map<String, Object> fail = store.listWhere(T_LOGIN_FAIL, r -> Rows.strEq(r, "key", key))
                 .stream().findFirst().orElse(null);
         if (fail == null) {
             return;
@@ -267,7 +267,7 @@ public class AuthService {
     }
 
     private void recordLoginFailure(String key) {
-        Map<String, Object> fail = store.listWhere(T_LOGIN_FAIL, r -> Rows.str(r, "key").equals(key))
+        Map<String, Object> fail = store.listWhere(T_LOGIN_FAIL, r -> Rows.strEq(r, "key", key))
                 .stream().findFirst().orElse(null);
         if (fail == null) {
             String id = UUID.randomUUID().toString().replace("-", "");
@@ -283,7 +283,7 @@ public class AuthService {
     }
 
     private void clearLoginFailure(String key) {
-        store.listWhere(T_LOGIN_FAIL, r -> Rows.str(r, "key").equals(key))
+        store.listWhere(T_LOGIN_FAIL, r -> Rows.strEq(r, "key", key))
                 .forEach(r -> store.delete(T_LOGIN_FAIL, Rows.str(r, "id")));
     }
 

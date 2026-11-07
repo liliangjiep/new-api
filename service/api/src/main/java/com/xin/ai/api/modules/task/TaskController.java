@@ -6,9 +6,11 @@ import com.xin.ai.common.dto.PageResult;
 import com.xin.ai.common.security.AuthContext;
 import com.xin.ai.common.security.CurrentUser;
 import com.xin.ai.domain.service.BillingService;
+import com.xin.ai.domain.service.TaskEventBus;
 import com.xin.ai.domain.service.TaskOrchestrator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,11 +34,15 @@ public class TaskController extends BaseController {
     private final BillingService billing;
     private final TaskOrchestrator tasks;
     private final TaskExecutor executor;
+    /** 行内注释2.1：事件总线 —— SSE 进度长连接。 */
+    private final TaskEventBus events;
 
-    public TaskController(BillingService billing, TaskOrchestrator tasks, TaskExecutor executor) {
+    public TaskController(BillingService billing, TaskOrchestrator tasks, TaskExecutor executor,
+            TaskEventBus events) {
         this.billing = billing;
         this.tasks = tasks;
         this.executor = executor;
+        this.events = events;
     }
 
     // 行内注释1：立即执行 —— 同步跑完上游链路并落终态，便于联调时直接看到结果。
@@ -99,7 +105,12 @@ public class TaskController extends BaseController {
         return ok(tasks.cancel(user.userId(), id));
     }
 
-    /** 进度事件流（SSE）—— 事件名 progress / done / failed。 */
+    /**
+     * 进度事件流（SSE）—— 真长连接：任务状态一变就推。
+     * 行内注释3：原实现是一次性推完即 complete，前端拿不到中间进度。
+     *             现在订阅 TaskEventBus，任务 running/progress/done/failed 时实时推送；
+     *             断线由前端降级为轮询 GET /tasks/{id}，两条通路数据同源。
+     */
     @GetMapping(value = "/tasks/{id}/progress", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter progress(@CurrentUser AuthContext.Principal user, @PathVariable String id) {
         SseEmitter emitter = new SseEmitter(300_000L);
@@ -110,11 +121,42 @@ public class TaskController extends BaseController {
                     .data(Map.of("progress", task.get("progress"), "status", status)));
             if ("succeeded".equals(status)) {
                 emitter.send(SseEmitter.event().name("done").data(Map.of("result", task.get("result"))));
-            } else if ("failed".equals(status)) {
+                emitter.complete();
+                return emitter;
+            }
+            if ("failed".equals(status)) {
                 emitter.send(SseEmitter.event().name("failed")
                         .data(Map.of("error_code", task.get("error_code"), "message", task.get("fail_reason"), "refunded", true)));
+                emitter.complete();
+                return emitter;
             }
-            emitter.complete();
+            // 行内注释3.1：还没到终态 —— 挂上订阅，等事件推送。
+            AtomicReference<Runnable> cancel = new AtomicReference<>();
+            cancel.set(events.subscribe(id, ev -> {
+                try {
+                    switch (ev.type()) {
+                        case TaskEventBus.EV_DONE -> {
+                            emitter.send(SseEmitter.event().name("done").data(Map.of("result", ev.payload())));
+                            emitter.complete();
+                        }
+                        case TaskEventBus.EV_FAILED -> {
+                            emitter.send(SseEmitter.event().name("failed").data(Map.of(
+                                    "error_code", ev.payload().get("error_code"),
+                                    "message", ev.payload().get("message"),
+                                    "refunded", true)));
+                            emitter.complete();
+                        }
+                        default -> emitter.send(SseEmitter.event().name("progress").data(Map.of(
+                                "progress", ev.progress(), "status", ev.status())));
+                    }
+                } catch (Exception e) {
+                    emitter.completeWithError(e);
+                }
+            }));
+            Runnable unsub = cancel.get();
+            emitter.onCompletion(unsub);
+            emitter.onTimeout(unsub);
+            emitter.onError(e -> unsub.run());
         } catch (Exception e) {
             emitter.completeWithError(e);
         }
@@ -143,7 +185,10 @@ public class TaskController extends BaseController {
         return ok(tasks.getBatch(user.userId(), id));
     }
 
-    /** 批次事件流（SSE）。 */
+    /**
+     * 批次事件流（SSE）—— 真长连接，逐个子任务推送进度。
+     * 行内注释4：批次内每个任务完成都会触发事件，这里统一转成批次级进度推送。
+     */
     @GetMapping(value = "/batches/{id}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter batchEvents(@CurrentUser AuthContext.Principal user, @PathVariable String id) {
         SseEmitter emitter = new SseEmitter(300_000L);
@@ -151,7 +196,29 @@ public class TaskController extends BaseController {
             Map<String, Object> batch = tasks.getBatch(user.userId(), id);
             emitter.send(SseEmitter.event().name("progress")
                     .data(Map.of("batch_id", id, "status", batch.get("status"))));
-            emitter.complete();
+            // 行内注释4.1：批次内任务列表 —— 逐个订阅，任一任务状态变化即刷新批次进度。
+            List<Map<String, Object>> items = batch.get("tasks") instanceof List<?> l
+                    ? (List<Map<String, Object>>) l : List.of();
+            List<Runnable> unsubs = new java.util.ArrayList<>();
+            for (Map<String, Object> t : items) {
+                String tid = String.valueOf(t.get("id"));
+                unsubs.add(events.subscribe(tid, ev -> {
+                    try {
+                        emitter.send(SseEmitter.event().name("progress").data(Map.of(
+                                "batch_id", id, "task_id", tid,
+                                "type", ev.type(), "status", ev.status())));
+                        if (TaskEventBus.EV_DONE.equals(ev.type()) || TaskEventBus.EV_FAILED.equals(ev.type())) {
+                            emitter.complete();
+                        }
+                    } catch (Exception e) {
+                        emitter.completeWithError(e);
+                    }
+                }));
+            }
+            Runnable unsub = () -> unsubs.forEach(Runnable::run);
+            emitter.onCompletion(unsub);
+            emitter.onTimeout(unsub);
+            emitter.onError(e -> unsub.run());
         } catch (Exception e) {
             emitter.completeWithError(e);
         }

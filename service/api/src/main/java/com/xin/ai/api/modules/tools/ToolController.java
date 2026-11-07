@@ -22,9 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
  * 视频工具链与石材接口（文档 §2.9、§2.10）。
  * 行内注释1：所有提交都先报价再进入统一任务链，保证计费一致。
  * 行内注释2：业务语义校验保留 —— erase 必带 regions，creator 必带 skill_pack，effect 必带材质锚定。
+ * 行内注释3：类级双前缀挂载 —— 前端 lib/backend/tools.ts 统一走 "/tools/xxx"，
+ *             接口文档 §2.10 写的是 "/xxx"（无 tools 前缀）。
+ *             两个前缀同时注册，老页面与新封装都能打到同一套逻辑，不做二选一。
  */
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping({"/api/v1", "/api/v1/tools"})
 public class ToolController extends BaseController {
 
     private final VideoToolService tools;
@@ -43,12 +46,12 @@ public class ToolController extends BaseController {
                 req.refImageAssetIds(), req.prompt(), req.model(), req.spec()));
     }
 
-    /** 商详套图 —— 一次生成 6 张。 */
+    /** 商详套图 —— 一次生成一组（count 决定张数，缺省 6 张）。 */
     @PostMapping("/ecommerce-set/jobs")
     public ApiResponse<Map<String, Object>> ecommerceSet(@CurrentUser AuthContext.Principal user,
             @RequestBody EcommerceSetRequest req) {
         return ok(tools.ecommerceSet(user.userId(), req.productAssetIds(), req.lang(), req.ratio(),
-                req.model(), req.resolution(), req.format()));
+                req.model(), req.resolution(), req.format(), req.count()));
     }
 
     /** 单张重生成。 */
@@ -157,8 +160,9 @@ public class ToolController extends BaseController {
 
     /** 材质导出打包。 */
     @PostMapping("/stone/materials/export")
-    public ApiResponse<Map<String, Object>> exportMaterials(@RequestBody ExportRequest req) {
-        return ok(tools.exportMaterials(req.ids()));
+    public ApiResponse<Map<String, Object>> exportMaterials(@CurrentUser AuthContext.Principal user,
+            @RequestBody ExportRequest req) {
+        return ok(tools.exportMaterials(user.userId(), req.ids()));
     }
 
     /** 脚本模板。 */
@@ -187,7 +191,7 @@ public class ToolController extends BaseController {
             String prompt, String model, String spec) {}
 
     public record EcommerceSetRequest(List<String> productAssetIds, String lang, String ratio,
-            String model, String resolution, String format) {}
+            String model, String resolution, String format, Integer count) {}
 
     public record RemixRequest(String sourceVideoAssetId, String strategy) {}
 

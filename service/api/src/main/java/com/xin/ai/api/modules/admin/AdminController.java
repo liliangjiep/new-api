@@ -383,7 +383,10 @@ public class AdminController extends BaseController {
     @PostMapping("/invite-codes/generate")
     public ApiResponse<List<Map<String, Object>>> generateInviteCodes(@CurrentUser AuthContext.Principal user,
             @RequestBody(required = false) GenerateRequest req) {
-        return list(admin.generateInviteCodes(user.userId(), req == null ? 10 : req.count()));
+        // 行内注释1：points 为充值卡面额积分 —— 0 表示纯邀请码（不带积分）。
+        return list(admin.generateInviteCodes(user.userId(),
+                req == null ? 10 : req.count(),
+                req == null || req.points() == null ? 0 : req.points()));
     }
 
     @DeleteMapping("/invite-codes/{code}")
@@ -433,5 +436,6 @@ public class AdminController extends BaseController {
 
     public record SettlementRequest(String period) {}
 
-    public record GenerateRequest(int count) {}
+    /** 行内注释2：count = 张数；points = 每张面额积分（0 = 纯邀请码，不带积分）。 */
+    public record GenerateRequest(int count, Integer points) {}
 }

@@ -17,6 +17,7 @@ import { PopoverSelect, TallPopoverSelect } from "@/components/features/PopoverS
 import { AssetPickerModal, type AssetItem } from "@/components/features/AssetPickerModal";
 import { MentionEditor } from "@/components/features/MentionEditor";
 import { useToast } from "@/components/features/ToastHost";
+import { speechErrorMessage, useSpeechInput } from "@/lib/useSpeechInput";
 import { cn } from "@/lib/cn";
 import { submitEcommerceSet } from "@/lib/backend/tools";
 import { waitTask, type TaskRecord } from "@/lib/backend/tasks";
@@ -94,6 +95,8 @@ interface Sel {
 export default function EcommerceImageSetPage() {
   const { push } = useToast();
   const router = useRouter();
+  // 行内注释1：真实语音闭环 —— 录音 → 上传资产 → 后端转写 → 回填补充说明。
+  const speech = useSpeechInput();
   const [sels, setSels] = useState<Sel[]>(
     MODULE_PURPOSES.map((p) => ({
       modulePurpose: p,
@@ -525,7 +528,28 @@ export default function EcommerceImageSetPage() {
                         <button
                           type="button"
                           aria-label="语音输入"
-                          onClick={() => push({ tone: "neutral", title: "正在聆听…（演示）" })}
+                          disabled={!speech.supported || speech.phase === "uploading" || speech.phase === "transcribing"}
+                          onClick={async () => {
+                            // 行内注释1：真实语音闭环 —— 录音 → 上传资产 → 后端转写 → 回填补充说明。
+                            //             此前是 toast 占位，后端 /speech-input/transcribe 从未被调用。
+                            if (speech.phase === "recording") {
+                              try {
+                                await speech.stop((text) => {
+                                  setNote((v) => (v ? `${v} ${text}` : text).slice(0, 1000));
+                                  push({ tone: "success", title: "语音已识别", description: text.slice(0, 60) });
+                                });
+                              } catch (e) {
+                                push({ tone: "warning", title: "语音识别失败", description: speechErrorMessage(e) });
+                              }
+                              return;
+                            }
+                            try {
+                              await speech.start();
+                              push({ tone: "neutral", title: "正在聆听…", description: "再次点击麦克风结束并转写" });
+                            } catch (e) {
+                              push({ tone: "warning", title: "无法录音", description: speechErrorMessage(e) });
+                            }
+                          }}
                           className="speech-input-controls-microphone flex h-[var(--toolbar-size,32px)] w-[var(--toolbar-size,32px)] shrink-0 touch-manipulation items-center justify-center rounded-full max-sm:h-[var(--toolbar-size,44px)] max-sm:w-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:w-[var(--toolbar-size,44px)] pointer-events-auto text-muted hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <svg

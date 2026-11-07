@@ -5,7 +5,7 @@ import { Button, Input, Label, Textarea, Switch } from "@/components/ui/primitiv
 import { Card, CardBody, CardHeader, CardTitle, Badge, Table, Th, Td } from "@/components/ui/surfaces";
 import { Modal } from "@/components/ui/overlays";
 import { useToast } from "@/components/features/ToastHost";
-import { RECHARGE_PACKAGES } from "@/lib/domain";
+import { RECHARGE_PACKAGES, type RechargePackage } from "@/lib/domain";
 import { cn } from "@/lib/cn";
 import { Coins, ShieldCheck, Wallet, Copy, CheckCircle2, LogOut } from "lucide-react";
 import { ApiError } from "@/lib/api";
@@ -19,7 +19,7 @@ import {
   type SessionItem,
 } from "@/lib/backend/users";
 import { uploadAsset } from "@/lib/backend/assets";
-import { getBalance, getLedger, createRechargeOrder, type BalanceView, type LedgerItem } from "@/lib/backend/points";
+import { getBalance, getLedger, createRechargeOrder, listRechargePackages, type BalanceView, type LedgerItem, type RechargePackageRow } from "@/lib/backend/points";
 
 /* ---------------- 资料 ---------------- */
 
@@ -267,16 +267,34 @@ export function CreditsPanel() {
   const [balance, setBalance] = useState<BalanceView | null>(null);
   const [history, setHistory] = useState<LedgerItem[]>([]);
   const [ordering, setOrdering] = useState(false);
-  const chosen = RECHARGE_PACKAGES.find((p) => p.code === pkg);
+  // 行内注释4.0：套餐走后端 —— 后台可改价/下架，前端写死常量会钱账不符。
+  const [packages, setPackages] = useState<RechargePackage[]>(RECHARGE_PACKAGES);
+  const chosen = packages.find((p) => p.code === pkg);
 
   const load = useCallback(async () => {
     try {
-      const [b, l] = await Promise.all([
+      const [b, l, pkgs] = await Promise.all([
         getBalance(),
         getLedger({ page: 1, pageSize: 10 }),
+        // 行内注释4.0.1：套餐拉取失败不阻塞余额展示 —— 回落本地常量。
+        listRechargePackages().catch(() => [] as RechargePackageRow[]),
       ]);
       setBalance(b);
       setHistory(l.data ?? []);
+      if (pkgs.length > 0) {
+        const enabled = pkgs.filter((p) => p.enabled !== false);
+        setPackages(
+          enabled.map((p) => ({
+            code: p.code,
+            name: p.name,
+            amount: p.amount,
+            credits: p.credits,
+            bonusRate: p.bonus_rate ?? 0,
+            audience: p.audience ?? "",
+          })),
+        );
+        setPkg((cur) => (enabled.some((p) => p.code === cur) ? cur : (enabled[0]?.code ?? cur)));
+      }
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "加载积分失败";
       push({ tone: "warning", title: "加载失败", description: msg });
@@ -330,10 +348,10 @@ export function CreditsPanel() {
         </CardBody>
       </Card>
       <Card>
-        <CardHeader><CardTitle>充值套餐</CardTitle><Badge tone="neutral">{RECHARGE_PACKAGES.length} 档</Badge></CardHeader>
+        <CardHeader><CardTitle>充值套餐</CardTitle><Badge tone="neutral">{packages.length} 档</Badge></CardHeader>
         <CardBody>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {RECHARGE_PACKAGES.map((p) => (
+            {packages.map((p) => (
               <button key={p.code} type="button" onClick={() => { setPkg(p.code); setPayOpen(true); }} aria-pressed={pkg === p.code}
                 className={cn("rounded-md border p-4 text-left transition-colors", pkg === p.code ? "border-accent bg-accent-soft/20" : "border-line bg-surface-2 hover:border-line-strong")}>
                 <span className="flex items-center justify-between"><span className="text-sm font-medium text-fg">{p.name}</span>{p.bonusRate > 0 && <Badge tone="accent">+{Math.round(p.bonusRate * 100)}%</Badge>}</span>

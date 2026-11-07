@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { WorkspaceShell } from "@/components/features/WorkspaceShell";
 import { useToast } from "@/components/features/ToastHost";
-import { getBalance, getLedger, type BalanceView, type LedgerItem } from "@/lib/backend/points";
+import { Button, Input, Label } from "@/components/ui/primitives";
+import { Modal } from "@/components/ui/overlays";
+import { getBalance, getLedger, redeemRechargeCard, type BalanceView, type LedgerItem } from "@/lib/backend/points";
 import { ApiError } from "@/lib/api";
 
 /*
@@ -62,12 +65,18 @@ const LEDGER_TOOLS = [
 
 export default function AccountPage() {
   const { push } = useToast();
+  const router = useRouter();
   const [selType, setSelType] = useState(0);
   const [selTool, setSelTool] = useState(0);
   // 行内注释1：真数据 —— 余额与明细走后端 /points/balance 与 /points/ledger。
   const [balance, setBalance] = useState<BalanceView | null>(null);
   const [ledger, setLedger] = useState<LedgerItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // 行内注释1.1：兑换充值卡 —— 真实链路 POST /recharge-cards/redeem。
+  //   此前此处是「请输入兑换码（演示）」toast，后端根本没有兑换端点，链路是断的。
+  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [redeemCode, setRedeemCode] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
 
   /**
    * 行内注释2：类型筛选映射 —— 前端展示名 → 后端 ledger type。
@@ -101,6 +110,28 @@ export default function AccountPage() {
   useEffect(() => {
     void load(selType);
   }, [load, selType]);
+
+  /**
+   * 行内注释1.2：真实兑换 —— POST /recharge-cards/redeem。
+   *   后端保证一张卡只能兑换一次（重复兑换 409 且不加积分）。
+   */
+  const redeem = async () => {
+    const code = redeemCode.trim();
+    if (!code) return;
+    setRedeeming(true);
+    try {
+      const res = await redeemRechargeCard(code);
+      push({ tone: "success", title: "兑换成功", description: `${res.points} 积分已到账` });
+      setRedeemOpen(false);
+      setRedeemCode("");
+      void load(selType);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "兑换失败";
+      push({ tone: "danger", title: "兑换失败", description: msg });
+    } finally {
+      setRedeeming(false);
+    }
+  };
 
   return (
     <WorkspaceShell>
@@ -147,14 +178,14 @@ export default function AccountPage() {
                 <div className="account-balance-actions flex shrink-0 flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => push({ tone: "neutral", title: "请输入兑换码（演示）", description: "前端复刻演示：弹窗/跳转无需后端。" })}
+                    onClick={() => setRedeemOpen(true)}
                     className="account-redeem-action inline-flex h-9 items-center justify-center rounded-lg border border-line px-4 text-sm font-semibold text-foreground"
                   >
                     兑换充值卡
                   </button>
                   <button
                     type="button"
-                    onClick={() => push({ tone: "neutral", title: "订阅 / 充值（演示）", description: "前端复刻演示：收银台跳转无需后端。" })}
+                    onClick={() => router.push("/account/settings?tab=credits")}
                     className="account-recharge-action inline-flex h-9 items-center justify-center rounded-lg bg-accent px-4 text-sm font-semibold text-on-accent transition-colors hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     订阅 / 充值
@@ -273,6 +304,32 @@ export default function AccountPage() {
           </section>
         </div>
       </section>
+
+      {/* —— 兑换充值卡弹窗 —— */}
+      {/* 行内注释1.3：真实兑换入口 —— POST /recharge-cards/redeem。 */}
+      <Modal open={redeemOpen} onClose={() => setRedeemOpen(false)} title="兑换充值卡" description="输入运营发放的充值卡号，积分即时到账">
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="redeem-code" className="mb-1.5 block">充值卡号</Label>
+            <Input
+              id="redeem-code"
+              value={redeemCode}
+              onChange={(e) => setRedeemCode(e.target.value)}
+              placeholder="例：XIN-1A2B-3C"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && redeemCode.trim() && !redeeming) void redeem();
+              }}
+            />
+            <p className="mt-1.5 text-[11px] text-fg-subtle">一张卡只能兑换一次，重复兑换不会重复入账。</p>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setRedeemOpen(false)}>取消</Button>
+          <Button disabled={!redeemCode.trim() || redeeming} onClick={() => void redeem()}>
+            {redeeming ? "兑换中…" : "确认兑换"}
+          </Button>
+        </div>
+      </Modal>
     </WorkspaceShell>
   );
 }

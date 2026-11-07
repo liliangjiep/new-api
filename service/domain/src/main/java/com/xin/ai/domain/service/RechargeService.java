@@ -5,6 +5,8 @@ import com.xin.ai.common.exception.ErrorCode;
 import com.xin.ai.domain.catalog.Catalog;
 import com.xin.ai.domain.repository.DataStore;
 import com.xin.ai.domain.repository.Rows;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -19,6 +21,8 @@ import org.springframework.stereotype.Service;
 public class RechargeService {
 
     public static final String T_ORDERS = "recharge_orders";
+    /** 行内注释2：充值套餐覆盖表 —— 后台运营改价后建单按覆盖价走。 */
+    public static final String T_PACKAGES = "recharge_packages";
 
     private final DataStore store;
     private final BillingService billing;
@@ -29,17 +33,42 @@ public class RechargeService {
     }
 
     // 行内注释3：公开套餐表 —— 与前端 RECHARGE_PACKAGES 一致。
+    // 行内注释3.1：套餐以「后台可覆盖」为准 —— 后台运营在 /admin/packages 改了金额/积分后，
+    //             这里必须同步返回覆盖后的值，否则会出现「后台改了价、用户按原价充值」。
     public List<Map<String, Object>> packages() {
-        return Catalog.RECHARGE_PACKAGES;
+        List<Map<String, Object>> overrides = store.listWhere(T_PACKAGES, r -> true);
+        if (overrides.isEmpty()) {
+            return Catalog.RECHARGE_PACKAGES;
+        }
+        Map<String, Map<String, Object>> byCode = new LinkedHashMap<>();
+        overrides.forEach(o -> byCode.put(Rows.str(o, "code"), o));
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> base : Catalog.RECHARGE_PACKAGES) {
+            Map<String, Object> merged = new LinkedHashMap<>(base);
+            Map<String, Object> ov = byCode.get(Rows.str(base, "code"));
+            if (ov != null) {
+                merged.put("amount", Rows.num(ov, "amount"));
+                merged.put("credits", Rows.num(ov, "credits"));
+                merged.put("enabled", Rows.bool(ov, "enabled"));
+            }
+            out.add(merged);
+        }
+        return out;
     }
 
     // 行内注释4：建单 —— Idempotency-Key 必带，重复返回原单。
     public Map<String, Object> createOrder(String userId, String packageCode, String payMethod) {
-        Map<String, Object> pkg = Catalog.RECHARGE_PACKAGES.stream()
+        // 行内注释4.0：取价走 packages()（含后台覆盖）—— 不能用静态 Catalog，
+        //             否则后台调价后用户仍按旧价建单，钱和积分对不上。
+        Map<String, Object> pkg = packages().stream()
                 .filter(p -> Rows.strEq(p, "code", packageCode))
                 .findFirst().orElse(null);
         if (pkg == null) {
             throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("message", "套餐不存在", "package_code", packageCode));
+        }
+        // 行内注释4.0.1：被后台停用的套餐不允许下单。
+        if (pkg.containsKey("enabled") && !Rows.bool(pkg, "enabled")) {
+            throw new BizException(ErrorCode.COMMON_BAD_REQUEST, Map.of("message", "该套餐已下架", "package_code", packageCode));
         }
         String orderNo = "ord_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         Map<String, Object> order = Rows.row(

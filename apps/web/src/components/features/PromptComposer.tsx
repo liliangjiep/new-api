@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { cn } from "@/lib/cn";
 import { AssetPickerModal, type AssetItem } from "@/components/features/AssetPickerModal";
 import { useToast } from "@/components/features/ToastHost";
+import { speechErrorMessage, useSpeechInput } from "@/lib/useSpeechInput";
 
 /**
  * 原站提示词编辑器（prompt-composer-root 实测 class 逐字复刻）
@@ -86,7 +87,9 @@ export function PromptComposer({
   const [myOpen, setMyOpen] = useState(false);
   const [saved, setSaved] = useState<string[]>([]);
   const [expanded, setExpanded] = useState(false);
-  const [speechOn, setSpeechOn] = useState(false);
+  // 行内注释1：语音输入走真实闭环（录音 → 上传资产 → 后端转写 → 回填）。
+  //             此前这里是 toast 占位，后端 /speech-input/transcribe 从未被调用过。
+  const speech = useSpeechInput();
   const mergedSrc = { ...localSrc, ...(pickedSrc ?? {}) };
   const openFor = (id: string) => {
     if (onSlotClick) {
@@ -405,11 +408,29 @@ export function PromptComposer({
               <button
                 type="button"
                 aria-label="语音输入"
-                onClick={() => {
-                  setSpeechOn((v) => !v);
-                  push({ tone: "neutral", title: speechOn ? "语音输入已停止（演示）" : "正在聆听…（演示）", description: "前端复刻演示，无需后端即可交互。" });
+                disabled={!speech.supported || speech.phase === "uploading" || speech.phase === "transcribing"}
+                onClick={async () => {
+                  // 行内注释1.1：录音 → 转写 → 回填到编辑器。
+                  //                 未接入语音服务时后端返回 available=false，
+                  //                 这里明确告知「改用文字输入」，不假装成功。
+                  if (speech.phase === "recording") {
+                    try {
+                      await speech.stop((text) => {
+                        push({ tone: "success", title: "语音已识别", description: text.slice(0, 60) });
+                      });
+                    } catch (e) {
+                      push({ tone: "warning", title: "语音识别失败", description: speechErrorMessage(e) });
+                    }
+                    return;
+                  }
+                  try {
+                    await speech.start();
+                    push({ tone: "neutral", title: "正在聆听…", description: "再次点击麦克风结束并转写" });
+                  } catch (e) {
+                    push({ tone: "warning", title: "无法录音", description: speechErrorMessage(e) });
+                  }
                 }}
-                data-speech-active={speechOn}
+                data-speech-active={speech.phase === "recording"}
                 className="speech-input-controls-microphone flex h-[var(--toolbar-size,32px)] w-[var(--toolbar-size,32px)] shrink-0 touch-manipulation items-center justify-center rounded-full max-sm:h-[var(--toolbar-size,44px)] max-sm:w-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:h-[var(--toolbar-size,44px)] [@media(pointer:coarse)]:w-[var(--toolbar-size,44px)] pointer-events-auto text-muted hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <svg

@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { titleForPath } from "@/lib/page-titles";
 import { useLoginModalStore } from "@/stores";
 import { LoginModal } from "@/components/features/LoginModal";
 import { useToast } from "@/components/features/ToastHost";
+import { createSession, listSessions, type AgentSession } from "@/lib/backend/agent";
+import { ApiError } from "@/lib/api";
 import {
   ASSETS_ICON,
   FLOATING_NAV,
@@ -190,6 +192,42 @@ function NavigationScrollbar({ scrollId }: { scrollId: string }) {
 export function AgentNavigationContent() {
   const { push } = useToast();
   const [recentOpen, setRecentOpen] = useState(true);
+  // 行内注释1：真实会话 —— 「新任务」建会话走 POST /agent/sessions，
+  //             「最近」列表走 GET /agent/sessions。此前这里是硬编码的「暂无历史对话」占位。
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [creating, setCreating] = useState(false);
+  const router = useRouter();
+
+  const loadSessions = useCallback(async () => {
+    try {
+      const list = await listSessions();
+      setSessions(list ?? []);
+    } catch {
+      // 行内注释1.1：未登录或拉取失败时保持空列表，不打断导航交互。
+      setSessions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSessions();
+  }, [loadSessions]);
+
+  const newTask = async () => {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const s = await createSession({ title: "新任务" });
+      push({ tone: "success", title: "已新建对话", description: s.title || "新任务" });
+      await loadSessions();
+      router.push(`/agent-chat?session=${encodeURIComponent(s.id)}`);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "新建对话失败";
+      push({ tone: "warning", title: "新建对话失败", description: msg });
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <div
       className="workspace-navigation-content flex flex-col"
@@ -199,8 +237,9 @@ export function AgentNavigationContent() {
         <div className="option-item flex min-w-0 w-full shrink-0 items-center rounded-lg bg-transparent text-sm font-normal text-foreground transition-colors hover:bg-interaction data-[selected=true]:bg-interaction data-[disabled=true]:text-subtle">
           <button
             type="button"
-            onClick={() => push({ tone: "neutral", title: "已新建对话（演示）", description: "前端复刻演示，无需后端即可交互。" })}
-            className="option-item-action flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left cursor-pointer"
+            disabled={creating}
+            onClick={() => void newTask()}
+            className="option-item-action flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left cursor-pointer disabled:opacity-60"
           >
             <span
               aria-hidden="true"
@@ -260,9 +299,22 @@ export function AgentNavigationContent() {
           >
             <div className="workspace-navigation-section-clip min-h-0 overflow-hidden">
               <div className="workspace-navigation-section-items flex flex-col gap-[1px]">
-                <p className="agent-conversation-list-empty px-2 py-2 text-xs text-muted">
-                  暂无历史对话
-                </p>
+                {sessions.length === 0 ? (
+                  <p className="agent-conversation-list-empty px-2 py-2 text-xs text-muted">
+                    暂无历史对话
+                  </p>
+                ) : (
+                  sessions.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => router.push(`/agent-chat?session=${encodeURIComponent(s.id)}`)}
+                      className="option-item-action flex min-w-0 w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-interaction"
+                    >
+                      <span className="option-item-label min-w-0 truncate">{s.title || "未命名对话"}</span>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           </div>

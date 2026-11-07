@@ -85,3 +85,36 @@ export async function listRechargeOrders(query?: {
     pageSize: query?.pageSize ?? 20,
   });
 }
+
+/**
+ * 公开套餐表 —— GET /recharge/packages。
+ * 行内注释2：必须走后端 —— 后台运营可在 /admin/packages 改金额/积分/上下架，
+ *             前端写死常量会出现「后台改了价、用户按旧价充值」的钱账不符。
+ *             拉取失败时前端回落本地常量，保证页面仍可用。
+ */
+export interface RechargePackageRow {
+  code: string;
+  name: string;
+  amount: number;
+  credits: number;
+  bonus_rate?: number;
+  audience?: string;
+  enabled?: boolean;
+}
+
+export async function listRechargePackages(): Promise<RechargePackageRow[]> {
+  return api.get<RechargePackageRow[]>("/recharge/packages");
+}
+
+/**
+ * 兑换充值卡 —— POST /recharge-cards/redeem。
+ * 行内注释3：一张卡只能兑换一次 —— 重复兑换后端返回 409 且不加积分。
+ */
+export async function redeemRechargeCard(code: string): Promise<{
+  code: string;
+  points: number;
+  balance: number;
+  message: string;
+}> {
+  return api.post("/recharge-cards/redeem", { code });
+}

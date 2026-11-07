@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { WorkspaceShell } from "@/components/features/WorkspaceShell";
 import { useToast } from "@/components/features/ToastHost";
 import { Button, Textarea } from "@/components/ui/primitives";
 import { Badge } from "@/components/ui/surfaces";
 import { Send, Square, RotateCcw, Plus, Paperclip, Sparkles, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { chatStream, listSessions, listSkills, type AgentSession, type AgentSkill } from "@/lib/backend/agent";
+import { chatStream, listSessions, listSkills, listMessages, type AgentSession, type AgentSkill } from "@/lib/backend/agent";
 import { ApiError } from "@/lib/api";
 
 const AGENT_PINNED = {
@@ -29,6 +30,7 @@ const FALLBACK_SKILLS = ["智能编导", "视频生成", "图片生成", "字幕
 
 export default function AgentCloudPage() {
   const { push } = useToast();
+  const searchParams = useSearchParams();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -59,6 +61,34 @@ export default function AgentCloudPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * 行内注释3.1：从 URL 带 session=xxx 进来时（侧栏点「最近」跳转），载入该会话的历史消息。
+   *             此前切会话只清空消息区，历史消息接口 GET /agent/sessions/{id}/messages 从未被调用。
+   */
+  const loadSessionMessages = useCallback(async (sid: string) => {
+    try {
+      const list = await listMessages(sid);
+      setMsgs(
+        (list ?? []).map((m, i) => ({
+          id: `h_${sid}_${i}`,
+          role: m.role === "user" ? "user" : "assistant",
+          text: m.content,
+        })),
+      );
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "加载历史消息失败";
+      push({ tone: "warning", title: "加载历史消息失败", description: msg });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const sid = searchParams.get("session");
+    if (!sid) return;
+    setSessionId(sid);
+    void loadSessionMessages(sid);
+  }, [searchParams, loadSessionMessages]);
 
   const send = useCallback(
     async (text?: string) => {
@@ -147,8 +177,8 @@ export default function AgentCloudPage() {
     abortRef.current?.abort();
     setStreaming(false);
     setSessionId(s.id);
-    setMsgs([]);
-    push({ tone: "neutral", title: "已切换会话", description: s.title });
+    // 行内注释4.3：切会话要载入历史消息 —— 之前只清空了消息区，用户看不到之前聊的内容。
+    void loadSessionMessages(s.id);
   };
 
   return (

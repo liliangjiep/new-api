@@ -6,6 +6,7 @@ import com.xin.ai.common.dto.PageResult;
 import com.xin.ai.common.security.AuthContext;
 import com.xin.ai.common.security.CurrentUser;
 import com.xin.ai.domain.service.BillingService;
+import com.xin.ai.domain.service.RechargeCardService;
 import com.xin.ai.domain.service.RechargeService;
 import java.util.List;
 import java.util.Map;
@@ -29,10 +30,12 @@ public class BillingController extends BaseController {
 
     private final BillingService billing;
     private final RechargeService recharge;
+    private final RechargeCardService cards;
 
-    public BillingController(BillingService billing, RechargeService recharge) {
+    public BillingController(BillingService billing, RechargeService recharge, RechargeCardService cards) {
         this.billing = billing;
         this.recharge = recharge;
+        this.cards = cards;
     }
 
     /** 余额 —— available / frozen / expires_at。 */
@@ -92,7 +95,20 @@ public class BillingController extends BaseController {
         return ok(recharge.callback(user.userId(), req.orderNo(), req.amount(), "支付宝"));
     }
 
+    /**
+     * 兑换充值卡 —— 用户侧入账。
+     * 行内注释1：这条链路此前完全缺失（后台能制卡但用户没法兑换），现在补齐。
+     * 行内注释2：一张卡只能兑换一次，重复兑换返回 409 且不加积分。
+     */
+    @PostMapping("/recharge-cards/redeem")
+    public ApiResponse<Map<String, Object>> redeemCard(@CurrentUser AuthContext.Principal user,
+            @RequestBody RedeemCardRequest req) {
+        return ok(cards.redeem(user.userId(), req.code()));
+    }
+
     public record CreateOrderRequest(String packageCode, String payMethod) {}
 
     public record CallbackRequest(String orderNo, Double amount, String signature) {}
+
+    public record RedeemCardRequest(String code) {}
 }

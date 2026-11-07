@@ -4,7 +4,7 @@
  * 行内注释2：体验版后端会直接回传 dev_code，前端自动填入，省去短信通道。
  */
 
-import { api, setToken, getToken } from "@/lib/api";
+import { api, setToken, setRefreshToken, getToken, getRefreshToken, clearAuth } from "@/lib/api";
 
 export interface AuthUser {
   id: string;
@@ -36,20 +36,25 @@ export async function sendSmsCode(phone: string): Promise<SmsSendResult> {
 export async function verifySmsCode(phone: string, code: string): Promise<AuthResult> {
   const r = await api.post<AuthResult>("/auth/sms/verify", { phone, code });
   setToken(r.access_token);
+  // 行内注释3：refresh_token 一起存 —— 否则 access 过期后无法静默续期。
+  setRefreshToken(r.refresh_token);
   return r;
 }
 
 export async function passwordLogin(account: string, password: string): Promise<AuthResult> {
   const r = await api.post<AuthResult>("/auth/password/login", { account, password });
   setToken(r.access_token);
+  setRefreshToken(r.refresh_token);
   return r;
 }
 
 export async function logout(): Promise<void> {
+  const rt = getRefreshToken();
   try {
-    await api.post<void>("/auth/logout", {});
+    // 行内注释3.1：登出带上 refresh_token —— 后端据此作废该 refresh，会话立刻失效。
+    await api.post<void>("/auth/logout", rt ? { refresh_token: rt } : {});
   } finally {
-    setToken(null);
+    clearAuth();
   }
 }
 

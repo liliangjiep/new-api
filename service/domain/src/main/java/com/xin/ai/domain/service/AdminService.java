@@ -750,30 +750,42 @@ public class AdminService {
         return all.subList(from, to);
     }
 
-    // ---------------- 邀请码 ----------------
+    // ---------------- 充值卡（邀请码） ----------------
+    //
+    // 行内注释8：充值卡 = 后台制卡（带面额积分）+ 用户侧兑换入账。
+    //   之前这里只能生成「无面额」的邀请码，且没有任何用户侧兑换端点 ——
+    //   前端「兑换充值卡」按钮只能弹 toast，属于闭环缺口。
+    //   现在制卡时带上 points 面额，用户用 POST /recharge-cards/redeem 兑换。
 
     public List<Map<String, Object>> listInviteCodes() {
         return store.listWhere(T_INVITE_CODES, r -> true).stream()
                 .map(c -> Rows.row(
                         "code", Rows.str(c, "code"),
                         "status", Rows.bool(c, "used") ? "已使用" : "未使用",
+                        "points", Rows.num(c, "points", 0),
                         "used_by", Rows.str(c, "used_by", "—"),
                         "created_at", Rows.str(c, "created_at")))
                 .toList();
     }
 
-    public List<Map<String, Object>> generateInviteCodes(String operator, int count) {
+    /**
+     * 生成充值卡 —— count 张，每张 points 面额积分。
+     * 行内注释8.1：points 为 0 表示「纯邀请码，不带面额」（保留原语义，不破坏已有数据）。
+     */
+    public List<Map<String, Object>> generateInviteCodes(String operator, int count, int points) {
         int n = Math.max(1, Math.min(count, 100));
+        int face = Math.max(0, Math.min(points, 1_000_000));
         List<Map<String, Object>> out = new ArrayList<>();
         for (int i = 0; i < n; i++) {
             String code = "XIN-" + UUID.randomUUID().toString().replace("-", "").substring(0, 4).toUpperCase()
                     + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 2).toUpperCase();
             store.put(T_INVITE_CODES, code, Rows.row(
                     "code", code, "used", false, "used_by", "",
+                    "points", face,
                     "created_at", Times.full(Times.now()), "created_by", operator));
-            out.add(Rows.row("code", code, "status", "未使用"));
+            out.add(Rows.row("code", code, "status", "未使用", "points", face));
         }
-        audit(operator, "生成邀请码", "batch", Rows.row("count", n), "");
+        audit(operator, "生成充值卡", "batch", Rows.row("count", n, "points", face), "");
         return out;
     }
 

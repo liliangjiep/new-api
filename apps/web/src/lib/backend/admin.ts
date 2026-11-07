@@ -523,11 +523,13 @@ export async function listAuditLogs(query?: {
   });
 }
 
-/* ---------------- 邀请码 ---------------- */
+/* ---------------- 充值卡（邀请码） ---------------- */
 
 export interface InviteCodeRow {
   code: string;
   status: string;
+  /** 面额积分 —— 0 表示纯邀请码（不含积分）。 */
+  points: number;
   used_by: string;
   created_at: string;
 }
@@ -536,8 +538,12 @@ export async function listInviteCodes(): Promise<InviteCodeRow[]> {
   return api.get("/admin/invite-codes");
 }
 
-export async function generateInviteCodes(count: number): Promise<InviteCodeRow[]> {
-  return api.post("/admin/invite-codes/generate", { count });
+/**
+ * 生成充值卡 —— points 为每张面额积分，0 = 纯邀请码。
+ * 行内注释1：带面额的卡可被用户用 POST /recharge-cards/redeem 兑换入账。
+ */
+export async function generateInviteCodes(count: number, points = 0): Promise<InviteCodeRow[]> {
+  return api.post("/admin/invite-codes/generate", { count, points });
 }
 
 export async function revokeInviteCode(code: string): Promise<void> {

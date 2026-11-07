@@ -1609,6 +1609,9 @@ function InviteCodesPanel() {
   const { push } = useToast();
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(10);
+  // 行内注释23.1：面额积分 —— 0 = 纯邀请码；>0 = 可被用户用
+  //   POST /recharge-cards/redeem 兑换的充值卡。
+  const [points, setPoints] = useState(0);
   const [codes, setCodes] = useState<adminApi.InviteCodeRow[]>([]);
 
   // 行内注释23：真实邀请码 —— 生成与作废都落库。
@@ -1631,7 +1634,7 @@ function InviteCodesPanel() {
 
   const generate = async () => {
     try {
-      const saved = await adminApi.generateInviteCodes(count);
+      const saved = await adminApi.generateInviteCodes(count, points);
       setCodes((p) => [...(saved ?? []), ...p]);
       setOpen(false);
       push({ tone: "success", title: `已生成 ${saved?.length ?? count} 个` });
@@ -1660,16 +1663,20 @@ function InviteCodesPanel() {
 
   return (
     <div className="space-y-4">
-      <Toolbar><Button size="sm" onClick={() => setOpen(true)}><Plus className="size-3.5" aria-hidden />生成邀请码</Button><Badge tone="neutral">{codes.length} 个</Badge></Toolbar>
+      <Toolbar><Button size="sm" onClick={() => setOpen(true)}><Plus className="size-3.5" aria-hidden />生成充值卡</Button><Badge tone="neutral">{codes.length} 个</Badge></Toolbar>
       <Card><CardBody className="p-0"><Table>
-        <thead><tr><Th>邀请码</Th><Th>状态</Th><Th>使用者</Th><Th>生成时间</Th><Th>操作</Th></tr></thead>
+        <thead><tr><Th>卡号</Th><Th>面额</Th><Th>状态</Th><Th>使用者</Th><Th>生成时间</Th><Th>操作</Th></tr></thead>
         <tbody>{codes.map((r) => (
-          <tr key={r.code}><Td className="tabular">{r.code}</Td><Td><Badge tone={r.status === "已使用" ? "neutral" : "accent"}>{r.status}</Badge></Td><Td className="tabular text-fg-muted">{r.used_by}</Td><Td className="tabular text-fg-subtle">{r.created_at}</Td>
+          <tr key={r.code}><Td className="tabular">{r.code}</Td><Td className="tabular text-fg-muted">{r.points > 0 ? `${r.points} 积分` : "邀请码"}</Td><Td><Badge tone={r.status === "已使用" ? "neutral" : "accent"}>{r.status}</Badge></Td><Td className="tabular text-fg-muted">{r.used_by}</Td><Td className="tabular text-fg-subtle">{r.created_at}</Td>
             <Td><span className="flex gap-1"><Button variant="ghost" size="sm" onClick={async () => { try { await navigator.clipboard.writeText(r.code); } catch { /* noop */ } push({ tone: "success", title: "已复制" }); }}><Copy className="size-3" />复制</Button><Button variant="ghost" size="sm" onClick={() => void revoke(r)}>作废</Button></span></Td></tr>))}
         </tbody>
       </Table></CardBody></Card>
-      <Modal open={open} onClose={() => setOpen(false)} title="生成邀请码" footer={<><Button variant="secondary" onClick={() => setOpen(false)}>取消</Button><Button onClick={() => void generate()}>生成</Button></>}>
-        <div><Label htmlFor="inv-n" className="mb-1.5 block">数量</Label><Input id="inv-n" type="number" min={1} max={100} value={count} onChange={(e) => setCount(Math.min(100, Math.max(1, Number(e.target.value) || 1)))} className="tabular" /></div>
+      <Modal open={open} onClose={() => setOpen(false)} title="生成充值卡" footer={<><Button variant="secondary" onClick={() => setOpen(false)}>取消</Button><Button onClick={() => void generate()}>生成</Button></>}>
+        <div className="space-y-3">
+          <div><Label htmlFor="inv-n" className="mb-1.5 block">数量</Label><Input id="inv-n" type="number" min={1} max={100} value={count} onChange={(e) => setCount(Math.min(100, Math.max(1, Number(e.target.value) || 1)))} className="tabular" /></div>
+          <div><Label htmlFor="inv-p" className="mb-1.5 block">面额积分（0 = 仅作邀请码，不含积分）</Label><Input id="inv-p" type="number" min={0} value={points} onChange={(e) => setPoints(Math.max(0, Number(e.target.value) || 0))} className="tabular" /></div>
+          <p className="text-[11px] text-fg-subtle">用户可在「我的积分 → 兑换充值卡」输入卡号兑换，积分即时到账；一张卡只能兑换一次。</p>
+        </div>
       </Modal>
     </div>
   );

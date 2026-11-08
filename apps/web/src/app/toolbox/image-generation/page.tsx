@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { QueryParamBridge } from "@/components/providers/QueryParamBridge";
 import {
   PANEL,
   PANEL_HEADER,
@@ -84,6 +85,11 @@ export default function ImageGenerationPage() {
   const [skill, setSkill] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [refs, setRefs] = useState(0);
+  /**
+   * 行内注释3.1：参考图资产 ID 列表 —— 槽位里选的图要真实传给上游（图生图）。
+   * 此前只维护了一个计数器 refs，选中的图选了等于没选。
+   */
+  const [refAssetIds, setRefAssetIds] = useState<string[]>([]);
   const [model, setModel] = useState("LC Image 2.5 Pro");
   const [setting, setSetting] = useState("自适应 · 1K 高 · PNG");
   const [tab, setTab] = useState("favorites");
@@ -92,6 +98,17 @@ export default function ImageGenerationPage() {
   const [progress, setProgress] = useState(0);
   const [currentTask, setCurrentTask] = useState<TaskRecord | null>(null);
 
+  /**
+   * 行内注释3.2：读取左侧导航带来的 ?skill_pack=xxx ——
+   * 此前导航链接是 /toolbox/image-generation?skill_pack=character-face-turnaround，
+   * 但页面从不读这个参数，点导航过来技能选择器仍是「图片创作」默认态，
+   * 导航与选择器形同两套。 现在按 query 预选技能。
+   *
+   * 行内注释3.2.1：改用 QueryParamBridge 而不是直接 useSearchParams ——
+   *   直接用会让 next build 报 CSR bailout（静态预渲染必须包 Suspense），
+   *   整页包 Suspense 又会让首屏退化成 fallback。Bridge 只把这一个小组件
+   *   放进 Suspense 边界，页面主体照常静态预渲染。
+   */
   /**
    * 行内注释3：真生成 —— 报价 → 提交 → 轮询到终态 → 展示上游返回的真实图片 URL。
    * 后端内部已做多中转站回退；前端只关心最终 result_urls。
@@ -111,7 +128,16 @@ export default function ImageGenerationPage() {
           modelKey,
           spec,
           count: 1,
-          params: { prompt: prompt.trim(), size: resolveSize(setting) },
+          // 行内注释3.3：技能包 id 随任务参数提交 ——
+          // 后端据此把对应提示词母版套到 prompt 上，技能选择才对出图有影响。
+          params: {
+            prompt: prompt.trim(),
+            size: resolveSize(setting),
+            ...(skill ? { skill_pack: skill } : {}),
+            // 行内注释3.4：参考图 ID 随任务参数提交 ——
+            // 后端翻译成真实 URL 走 reference_images，上游才真的能做图生图。
+            ...(refAssetIds.length ? { ref_asset_ids: refAssetIds } : {}),
+          },
         },
         {
           onTaskCreated: (t) => setCurrentTask(t),
@@ -153,6 +179,12 @@ export default function ImageGenerationPage() {
       wrapEditor
       editor={
         <div className={PANEL}>
+          <QueryParamBridge
+            name="skill_pack"
+            onValue={(sp) => {
+              if (IMAGE_SKILLS.some((s) => s.id === sp)) setSkill(sp);
+            }}
+          />
           <div className="relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             {/* —— 面板头：技能触发器 + 新建 —— */}
             <div className={`${PANEL_HEADER} !bg-transparent !backdrop-blur-none`}>
@@ -184,6 +216,9 @@ export default function ImageGenerationPage() {
                   onClick={() => {
                     setPrompt("");
                     setRefs(0);
+                    // 行内注释3.5：「新建」要把参考图一起清掉 ——
+                    // 否则上一轮的图会跟着下一轮提交，用户以为已经重开一张。
+                    setRefAssetIds([]);
                     setResults([]);
                   }}
                   aria-label="新建"
@@ -229,6 +264,25 @@ export default function ImageGenerationPage() {
                   },
                 ]}
                 onAddSlot={() => setRefs((n) => Math.min(MAX_REFS, n + 1))}
+                // 行内注释3.6：采集选中的参考图资产 ——
+                // 最多 9 张（原站实测上限），超出提示而不是静默丢弃。
+                onPickSlot={(_slotId, assets) => {
+                  setRefAssetIds((prev) => {
+                    const next = [...prev];
+                    for (const a of assets) {
+                      if (next.length >= MAX_REFS) {
+                        push({
+                          tone: "warning",
+                          title: "参考图已达上限",
+                          description: `最多 ${MAX_REFS} 张参考图，多余的未加入`,
+                        });
+                        break;
+                      }
+                      if (!next.includes(a.id)) next.push(a.id);
+                    }
+                    return next;
+                  });
+                }}
               >
                 <MentionEditor
                   value={prompt}

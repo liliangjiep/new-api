@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { QueryParamBridge } from "@/components/providers/QueryParamBridge";
 import {
   PANEL,
   PANEL_HEADER,
@@ -87,6 +88,12 @@ export default function VideoGenerationPage() {
   const [skill, setSkill] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [count, setCount] = useState(0);
+  /**
+   * 行内注释3.3：参考素材资产 ID —— 图片/角色槽走 reference_images，声音槽走 audio_with_roles。
+   * 此前槽位选中的素材全部丢弃，选了等于没选。
+   */
+  const [refAssetIds, setRefAssetIds] = useState<string[]>([]);
+  const [audioAssetId, setAudioAssetId] = useState<string | null>(null);
   const [model, setModel] = useState("Seedance-2.5");
   const [setting, setSetting] = useState("9:16 · 480P · 25s");
   const [tab, setTab] = useState("examples");
@@ -95,6 +102,13 @@ export default function VideoGenerationPage() {
   const [progress, setProgress] = useState(0);
   const [currentTask, setCurrentTask] = useState<TaskRecord | null>(null);
 
+  /**
+   * 行内注释3.2：读取左侧导航带来的 ?skill=xxx（视频页用 skill 而非 skill_pack）——
+   * 此前导航链接带了参数但页面不读，点过来技能选择器仍是默认态。
+   *
+   * 行内注释3.2.1：改用 QueryParamBridge —— 直接 useSearchParams 会触发
+   *   next build 的 CSR bailout（静态预渲染必须包 Suspense 边界）。
+   */
   /**
    * 行内注释3：真生成 —— 报价 → 提交 → 轮询终态 → 展示上游视频 URL。
    */
@@ -113,7 +127,15 @@ export default function VideoGenerationPage() {
           modelKey,
           spec,
           count: 1,
-          params: { prompt: prompt.trim(), ...resolveVideoParams(setting) },
+          params: {
+            prompt: prompt.trim(),
+            ...resolveVideoParams(setting),
+            // 行内注释3.5：技能包 id 随任务参数提交 —— 后端据此把技能创作方向拼进提示词。
+            ...(skill ? { skill_pack: skill } : {}),
+            // 行内注释3.6：参考素材 —— 图片走 reference_images，音频走 audio_with_roles。
+            ...(refAssetIds.length ? { ref_asset_ids: refAssetIds } : {}),
+            ...(audioAssetId ? { audio_asset_id: audioAssetId } : {}),
+          },
         },
         {
           onTaskCreated: (t) => setCurrentTask(t),
@@ -156,6 +178,12 @@ export default function VideoGenerationPage() {
       wrapEditor
       editor={
         <div className={PANEL}>
+          <QueryParamBridge
+            name="skill"
+            onValue={(sp) => {
+              if (VIDEO_SKILLS.some((s) => s.id === sp)) setSkill(sp);
+            }}
+          />
           <div className="video-generation-panel-content relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             {/* —— 面板头 —— */}
             <div className={PANEL_HEADER}>
@@ -187,6 +215,9 @@ export default function VideoGenerationPage() {
                   onClick={() => {
                     setPrompt("");
                     setCount(0);
+                    // 行内注释3.7：「新建」清空参考素材 —— 否则上一轮的素材会跟着下一轮提交。
+                    setRefAssetIds([]);
+                    setAudioAssetId(null);
                     setResults([]);
                   }}
                   aria-label="清空配置并新建"
@@ -259,6 +290,24 @@ export default function VideoGenerationPage() {
                 onAddSlot={() =>
                   setCount((n) => Math.min(MAX_MATERIALS, n + 1))
                 }
+                // 行内注释3.4：采集参考素材 ——
+                // 此前槽位选中的图/角色/声音全部丢弃，选了等于没选。
+                // 图片槽走 reference_images（图生视频），声音槽走 audio_with_roles（音频驱动）。
+                onPickSlot={(slotId, assets) => {
+                  const ids = assets.map((a) => a.id).filter(Boolean);
+                  if (ids.length === 0) return;
+                  if (slotId === "reference_4") {
+                    setAudioAssetId(ids[0]);
+                  } else {
+                    setRefAssetIds((prev) => {
+                      const next = [...prev];
+                      for (const id of ids) {
+                        if (!next.includes(id)) next.push(id);
+                      }
+                      return next;
+                    });
+                  }
+                }}
                 action={
                   <div className="prompt-reference-action ml-auto flex shrink-0 justify-end">
                     <button

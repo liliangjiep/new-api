@@ -28,6 +28,10 @@ public enum ErrorCode {
     INVOICE_TAX_INVALID("invoice.tax_invalid", "税号格式不正确", 400),
     QUERY_INVALID("query.invalid", "查询参数不合法", 400),
     COMMON_BAD_REQUEST("common.bad_request", "参数错误", 400),
+    // 行内注释4.1：路由层错误 —— 请求方法不被支持（PUT/DELETE 打到了只有 GET 的接口）。
+    //             此前这类异常会掉进兜底 500，前端只能看到「服务繁忙」，
+    //             完全看不出是「接口不支持该方法」。回 405 让调用方能直接定位。
+    COMMON_METHOD_NOT_ALLOWED("common.method_not_allowed", "请求方法不被支持", 405),
     COMMON_CONFLICT("common.conflict", "幂等冲突，请求已处理", 409),
     COMMON_NOT_FOUND("common.not_found", "资源不存在", 404),
     COMMON_INTERNAL("common.internal", "服务繁忙，请稍后重试", 500),

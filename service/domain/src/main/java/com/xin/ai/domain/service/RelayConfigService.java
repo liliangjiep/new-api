@@ -113,6 +113,10 @@ public class RelayConfigService {
      *             否则每个实例都以为别的实例还活着，会同时猛打一个已经挂掉的站。
      * 行内注释4.1：只有「状态」跨实例共享，「冷却到期时间」仍在内存里 ——
      *             那是运行时状态，落库还得定时清理，不值当。
+     * 行内注释4.2：但「只有状态没有到期时间」曾经导致<b>永久熔断</b> ——
+     *             落库 open 是个无期限标记，谁都不知道它何时该恢复。
+     *             现在把到期时间一并落库（circuit_open_until），
+     *             多实例共享的是同一条「到点恢复」语义。
      */
     public CircuitState circuitState(String channelId) {
         if (channelId == null || channelId.isBlank()) {
@@ -120,10 +124,11 @@ public class RelayConfigService {
         }
         try {
             List<CircuitState> rows = jdbc.query(
-                    "SELECT circuit_state, consecutive_failures FROM model_channels WHERE id = ?",
+                    "SELECT circuit_state, consecutive_failures, circuit_open_until FROM model_channels WHERE id = ?",
                     (rs, i) -> new CircuitState(
                             rs.getString("circuit_state"),
-                            rs.getInt("consecutive_failures")),
+                            rs.getInt("consecutive_failures"),
+                            epochMillisOf(rs.getTimestamp("circuit_open_until"))),
                     channelId);
             return rows.isEmpty() ? null : rows.get(0);
         } catch (Exception e) {
@@ -133,12 +138,19 @@ public class RelayConfigService {
     }
 
     /**
+     * 时间戳转毫秒 —— null 返回 0（调用方按「无到期时间」处理）。
+     */
+    private static long epochMillisOf(java.sql.Timestamp ts) {
+        return ts == null ? 0L : ts.getTime();
+    }
+
+    /**
      * 记录一次成功 —— 熔断恢复，失败计数清零。
      */
     public void markChannelSuccess(String channelId) {
         try {
             jdbc.update("UPDATE model_channels SET circuit_state='closed', consecutive_failures=0, "
-                    + "updated_at=NOW() WHERE id=?", channelId);
+                    + "circuit_open_until=NULL, updated_at=NOW() WHERE id=?", channelId);
         } catch (Exception e) {
             log.debug("写熔断成功状态失败: {}", e.getMessage());
         }
@@ -147,19 +159,29 @@ public class RelayConfigService {
     /**
      * 记录一次失败 —— 连续失败达阈值则熔断（open）并写冷却到期时间。
      * 行内注释4.2：连续失败达阈值即把该站标记 open，后续请求直接跳过。
+     * 行内注释4.3：openUntilEpochMillis —— 熔断到期时间（毫秒）。
+     *             0 表示「本次还没达阈值，不熔断」。
      */
-    public void markChannelFailure(String channelId, int consecutiveFailures, int threshold) {
+    public void markChannelFailure(String channelId, int consecutiveFailures, int threshold,
+            long openUntilEpochMillis) {
         try {
-            String state = consecutiveFailures >= threshold ? "open" : "closed";
-            jdbc.update("UPDATE model_channels SET circuit_state=?, consecutive_failures=?, "
-                    + "updated_at=NOW() WHERE id=?", state, consecutiveFailures, channelId);
+            if (openUntilEpochMillis > 0L) {
+                jdbc.update("UPDATE model_channels SET circuit_state='open', consecutive_failures=?, "
+                        + "circuit_open_until=?, updated_at=NOW() WHERE id=?",
+                        consecutiveFailures, new java.sql.Timestamp(openUntilEpochMillis), channelId);
+            } else {
+                jdbc.update("UPDATE model_channels SET circuit_state='closed', consecutive_failures=?, "
+                        + "updated_at=NOW() WHERE id=?", consecutiveFailures, channelId);
+            }
         } catch (Exception e) {
             log.debug("写熔断失败状态失败: {}", e.getMessage());
         }
     }
 
-    /** 熔断状态值对象。 */
-    public record CircuitState(String state, int consecutiveFailures) {
+    /**
+     * 熔断状态值对象。
+     */
+    public record CircuitState(String state, int consecutiveFailures, long openUntilEpochMillis) {
         /** 是否处于熔断（open）状态。 */
         public boolean isOpen() {
             return "open".equalsIgnoreCase(state);
@@ -391,6 +413,9 @@ public class RelayConfigService {
         m.put("cost_ratio", rs.getDouble("cost_ratio"));
         m.put("status", rs.getString("status"));
         m.put("circuit_state", rs.getString("circuit_state"));
+        // 行内注释9.1：熔断到期时间 —— 后台「通道健康」面板要能看到「还有多久恢复」，
+        //             否则用户只看到 circuit_state=open，却不知道它会不会自己好。
+        m.put("circuit_open_until", rs.getString("circuit_open_until"));
         m.put("consecutive_failures", rs.getInt("consecutive_failures"));
         m.put("balance", rs.getDouble("balance"));
         m.put("remark", rs.getString("remark"));

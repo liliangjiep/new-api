@@ -37,18 +37,37 @@ public class TaskExecutor {
     private static final int MAX_POLL_TIMES = 100;
     private static final long POLL_INTERVAL_MS = 3000L;
 
-    /** 上游模型映射：平台 model_key → 该站的上游模型名（DB 未配置时的兜底）。 */
-    private static final Map<String, String> UPSTREAM_MODEL = Map.of(
-            "image.t2i.1k", "gpt-image-2",
-            "image.t2i.2k", "gpt-image-2",
-            "image.t2i.4k", "gpt-image-2",
-            "stone.effect.2k", "gpt-image-2",
-            "stone.effect.4k", "gpt-image-2",
-            "stone.effect.set6", "gpt-image-2",
-            "video.t2v.720p", "seedance-2-mini",
-            "video.t2v.mini", "seedance-2-mini",
-            "video.batch.480p", "seedance-2-mini",
-            "video.i2v.kling", "seedance-2-mini");
+    /**
+     * 上游模型映射：平台 model_key → 该站的上游模型名（DB 未配置时的兜底）。
+     * 行内注释7.3：这份映射必须覆盖 V3 迁移里建的全部接入点 ——
+     *             漏一个，该 model_key 走环境变量兜底通道时 upstream_model 就是空串，
+     *             上游收到 "model": "" 会直接回 model_not_found。
+     */
+    private static final Map<String, String> UPSTREAM_MODEL = Map.ofEntries(
+            Map.entry("image.t2i.1k", "gpt-image-2"),
+            Map.entry("image.t2i.2k", "gpt-image-2"),
+            Map.entry("image.t2i.4k", "gpt-image-2"),
+            Map.entry("stone.effect.2k", "gpt-image-2"),
+            Map.entry("stone.effect.4k", "gpt-image-2"),
+            Map.entry("stone.effect.set6", "gpt-image-2"),
+            Map.entry("video.t2v.720p", "seedance-2-mini"),
+            Map.entry("video.t2v.mini", "seedance-2-mini"),
+            Map.entry("video.batch.480p", "seedance-2-mini"),
+            Map.entry("video.i2v.kling", "seedance-2-mini"),
+            // 行内注释7.3.1：视频编辑类（画质增强 / 字幕擦除 / 水印擦除 / 图片口播 /
+            //             改口型 / 厂家介绍视频）统一走 wan3.0-video ——
+            //             它是当前 key 唯一支持多模态参考（reference_images / video_list /
+            //             audio_with_roles）的视频模型。
+            Map.entry("video.process.enhance", "wan3.0-video"),
+            Map.entry("video.erase.subtitle", "wan3.0-video"),
+            Map.entry("video.erase.watermark", "wan3.0-video"),
+            Map.entry("image-speak.30s", "wan3.0-video"),
+            Map.entry("image-speak.60s", "wan3.0-video"),
+            Map.entry("image-speak.60s.light", "wan3.0-video"),
+            Map.entry("lipsync.volc.1min", "wan3.0-video"),
+            Map.entry("factory-video.60s", "wan3.0-video"),
+            Map.entry("factory-video.60s.light", "wan3.0-video"),
+            Map.entry("doubao-tts-2.0", "doubao-tts-2.0"));
 
     /** 默认参数映射：平台参数 → 上游参数。 */
     private static final Map<String, String> PARAM_KEYS = Map.of(
@@ -69,13 +88,16 @@ public class TaskExecutor {
     private final RedisTokenBucket tokenBucket;
     /** 行内注释9.5：上游参数装配 —— 把业务参数（asset_id/avatar_id/regions）翻译成上游要的 URL 与字段。 */
     private final UpstreamParamBuilder paramBuilder;
+    /** 行内注释5.2：产物登记 —— 生成成功后把 URL 落成 source=ai 的资产。 */
+    private final com.xin.ai.domain.service.AssetService assets;
 
     public TaskExecutor(DataStore store, TaskOrchestrator tasks,
             @Qualifier("relayAdapter") RelayAdapter adapter,
             RelayConfigService relayConfig,
             ChannelRouter router,
             RedisTokenBucket tokenBucket,
-            UpstreamParamBuilder paramBuilder) {
+            UpstreamParamBuilder paramBuilder,
+            com.xin.ai.domain.service.AssetService assets) {
         this.store = store;
         this.tasks = tasks;
         this.adapter = adapter;
@@ -83,6 +105,7 @@ public class TaskExecutor {
         this.router = router;
         this.tokenBucket = tokenBucket;
         this.paramBuilder = paramBuilder;
+        this.assets = assets;
     }
 
     /**
@@ -152,17 +175,72 @@ public class TaskExecutor {
         ModelAdapter.ModelResponse polled = pollUntilTerminal(pollReq, submitted.upstreamTaskId(), taskId);
         if (polled.ok()) {
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("result_urls", polled.raw().getOrDefault("result_urls", List.of()));
+            List<String> urls = listOfUrls(polled.raw().get("result_urls"));
+            result.put("result_urls", urls);
             result.put("type", polled.raw().getOrDefault("type", ""));
             result.put("billing", polled.raw().getOrDefault("billing", Map.of()));
             result.put("channel_id", used.channelId());
             result.put("channel_name", used.channelName());
+            // 行内注释5.2：产物落资产库 —— 生成成功后把 URL 登记为 source=ai 的资产，
+            //   这样资产页「AI生成的」筛选才有数据、用户能直接复用刚生成的素材，
+            //   发现流也有真实作品源。此前这里只存了一串裸 URL。
+            result.put("assets", registerAssets(task, urls));
             tasks.markSucceeded(taskId, result);
         } else {
             tasks.markFailed(taskId, polled.errorCode(),
                     polled.errorMessage() == null ? "上游生成失败" : polled.errorMessage());
         }
         return tasks.get(Rows.str(task, "user_id"), taskId);
+    }
+
+    /** 结果 URL 列表 —— 上游可能返回 List<String> 或逗号分隔串。 */
+    private List<String> listOfUrls(Object raw) {
+        if (raw instanceof List<?> list) {
+            List<String> out = new ArrayList<>();
+            for (Object o : list) {
+                if (o != null && !String.valueOf(o).isBlank()) {
+                    out.add(String.valueOf(o));
+                }
+            }
+            return out;
+        }
+        if (raw instanceof String s && !s.isBlank()) {
+            return List.of(s);
+        }
+        return List.of();
+    }
+
+    /**
+     * 登记产物到资产库。
+     * 行内注释5.3：登记失败不阻断任务结算 ——
+     *   上游已经生成成功，积分该扣就扣；资产登记只是附带动作，
+     *   失败只记日志，不能把一次成功生成变成失败（更不能吞掉退款逻辑）。
+     */
+    private List<Map<String, Object>> registerAssets(Map<String, Object> task, List<String> urls) {
+        if (urls.isEmpty() || assets == null) {
+            return List.of();
+        }
+        try {
+            String userId = Rows.str(task, "user_id", "");
+            String title = Rows.str(task, "title", "生成结果");
+            String kind = kindOf(Rows.str(task, "model_key", ""));
+            return assets.registerGenerated(userId, Rows.str(task, "id", ""), title, kind, urls);
+        } catch (Exception e) {
+            log.warn("登记生成产物到资产库失败 task={} err={}", Rows.str(task, "id", ""), e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** model_key → 资产类型 —— 决定资产库里这条记录是图片还是视频。 */
+    private String kindOf(String modelKey) {
+        if (modelKey.startsWith("video") || modelKey.startsWith("factory")
+                || modelKey.startsWith("lipsync") || modelKey.startsWith("image-speak")) {
+            return "video";
+        }
+        if (modelKey.startsWith("doubao-tts")) {
+            return "audio";
+        }
+        return "image";
     }
 
     /**

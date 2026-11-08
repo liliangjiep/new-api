@@ -86,6 +86,29 @@ public final class Catalog {
             pkg("flagship", "旗舰包", 20000, 22400, 0.12, "大额采购"),
             pkg("agent", "代理包", 50000, 58000, 0.16, "分销商 / 联盟"));
 
+    /**
+     * 图片技能包（前端 skills.ts IMAGE_NAV 的 11 个 skill_pack id，2026-10-30 原站实测）。
+     *
+     * <p>行内注释1.1：为什么与 IMAGE_SKILLS 并存 ——
+     * IMAGE_SKILLS 是「提示词母版分类」（通用出图/电商主图/石材…，key 供后台技能包覆写），
+     * 而前端技能导航用的是原站的 skill_pack id（character-face-turnaround 等）。
+     * 两套命名空间原本各说各话：前端选了技能不提交，后端也不认这个 id。
+     * 这里补一份 id → 母版 key 的映射表，任务提交时按 skill_pack 找到母版，
+     * 再用母版的 prompt_template 拼上用户提示词 —— 技能选择才真正生效。
+     */
+    public static final Map<String, String> IMAGE_SKILL_PACK_MASTER = Map.ofEntries(
+            Map.entry("character-face-turnaround", "general"),
+            Map.entry("character-fullbody-sheet", "general"),
+            Map.entry("change-face", "model-portrait"),
+            Map.entry("dual-face-fusion", "model-portrait"),
+            Map.entry("change-cloth", "model-portrait"),
+            Map.entry("model-product-try-on", "ecommerce-scene"),
+            Map.entry("product-white-background", "ecommerce-main"),
+            Map.entry("element-replace", "product-detail"),
+            Map.entry("background-change", "background"),
+            Map.entry("portrait-realism-enhance", "model-portrait"),
+            Map.entry("product-refine", "upscale"));
+
     /** 图片技能包（前端 IMAGE_SKILLS，11 项，含提示词模板）。 */
     public static final List<Map<String, Object>> IMAGE_SKILLS = List.of(
             imageSkill("general", "通用出图", "通用文生图与图生图",

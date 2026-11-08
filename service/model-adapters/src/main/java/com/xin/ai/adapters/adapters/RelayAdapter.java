@@ -166,25 +166,47 @@ public class RelayAdapter implements ModelAdapter {
     // 行内注释8.1：模板值可以是嵌套 Map / List —— 上游的多模态接口需要
     //             {"video_list":[{"video_url":"{video_url}"}]} 这种结构，
     //             所以这里对任意深度递归渲染，而不是只处理顶层字符串。
+    // 行内注释8.2：渲染不出来的占位符<b>整键丢弃</b>，不把 "{prompt}" 这种字面量发给上游 ——
+    //             上游收到字面量占位符会当成真实提示词，既浪费额度又产出垃圾内容。
     private Map<String, Object> renderBody(RelayTemplate tpl, ModelRequest req) {
         Map<String, Object> params = req.params() == null ? Map.of() : req.params();
         Map<String, Object> out = new LinkedHashMap<>();
-        tpl.requestTemplate().forEach((k, v) -> out.put(k, renderValue(v, params, req.endpoint())));
+        tpl.requestTemplate().forEach((k, v) -> {
+            Object rendered = renderValue(v, params, req.endpoint());
+            if (rendered == DROP) {
+                // 行内注释8.2.1：占位符在参数里找不到 —— 整个键不发。
+                return;
+            }
+            out.put(k, rendered);
+        });
         return out;
     }
+
+    /**
+     * 「整键丢弃」哨兵 —— 与普通值区分开，避免用 null 混淆「渲染出 null」和「渲染不出来」。
+     */
+    private static final Object DROP = new Object();
 
     /** 递归渲染 —— Map 逐键渲染、List 逐项渲染，其余走字符串占位替换。 */
     private Object renderValue(Object value, Map<String, Object> params,
             ModelAdapter.EndpointSnapshot endpoint) {
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> nested = new LinkedHashMap<>();
-            map.forEach((k, v) -> nested.put(String.valueOf(k), renderValue(v, params, endpoint)));
+            map.forEach((k, v) -> {
+                Object rendered = renderValue(v, params, endpoint);
+                if (rendered != DROP) {
+                    nested.put(String.valueOf(k), rendered);
+                }
+            });
             return nested;
         }
         if (value instanceof List<?> list) {
             java.util.List<Object> nested = new java.util.ArrayList<>(list.size());
             for (Object item : list) {
-                nested.add(renderValue(item, params, endpoint));
+                Object rendered = renderValue(item, params, endpoint);
+                if (rendered != DROP) {
+                    nested.add(rendered);
+                }
             }
             return nested;
         }
@@ -197,18 +219,31 @@ public class RelayAdapter implements ModelAdapter {
     // 行内注释9：占位符替换 —— {prompt}/{size}/{n}/{upstream_model} 等。
     // 行内注释9.1：模板值若是「单个占位符」（如 "{n}"），直接用参数的原始类型 ——
     //             否则 n=1 会变成字符串 "1"，上游做参数校验时会拒（400/403）。
+    // 行内注释9.2：渲染不出来的占位符返回 DROP 哨兵 —— 整个键不发出去。
+    //             此前是把 "{prompt}" 原样发给上游，实测日志里出现过：
+    //             body={"model":"","prompt":"{prompt}","size":"1:1",...}
+    //             上游把字面量 "{prompt}" 当成了提示词，既浪费额度又产出垃圾内容。
     private Object substitute(String tpl, Map<String, Object> params, ModelAdapter.EndpointSnapshot endpoint) {
         // 单占位符 —— 保留原始类型。
         if (tpl.length() > 2 && tpl.startsWith("{") && tpl.endsWith("}")
                 && tpl.indexOf('}') == tpl.length() - 1) {
             String key = tpl.substring(1, tpl.length() - 1);
             if ("upstream_model".equals(key)) {
-                return endpoint == null || endpoint.upstreamModel() == null ? "" : endpoint.upstreamModel();
+                // 行内注释9.2.1：上游模型名缺失 —— 整键丢弃。
+                //   发空字符串等于让上游「用默认模型」，那多半是错的模型，
+                //   上游会回 model_not_found（实测 ch_toapis 对 model="" 回 403）。
+                if (endpoint == null || endpoint.upstreamModel() == null
+                        || endpoint.upstreamModel().isBlank()) {
+                    return DROP;
+                }
+                return endpoint.upstreamModel();
             }
             if (params.containsKey(key)) {
                 Object v = params.get(key);
                 return v == null ? "" : v;
             }
+            // 行内注释9.2.2：参数里没有这个键 —— 丢弃，不要把占位符原样发出去。
+            return DROP;
         }
         String out = tpl;
         if (out.contains("{upstream_model}") && endpoint != null && endpoint.upstreamModel() != null) {
@@ -221,7 +256,32 @@ public class RelayAdapter implements ModelAdapter {
                 out = out.replace(token, v == null ? "" : String.valueOf(v));
             }
         }
+        // 行内注释9.2.3：多占位符字符串 —— 渲染后仍有未解析的 {xxx} 就整键丢弃。
+        if (hasUnresolvedPlaceholder(out)) {
+            return DROP;
+        }
         return out;
+    }
+
+    /**
+     * 判断字符串里是否还有未解析的占位符 —— 形如 {word}（不含空白与常见标点）。
+     * 行内注释9.3：只认「单词形态」的花括号 —— 用户提示词里出现 "{ }" 或
+     *             "{ hello }" 不该被误判成占位符。
+     */
+    private boolean hasUnresolvedPlaceholder(String s) {
+        int open = s.indexOf('{');
+        while (open >= 0) {
+            int close = s.indexOf('}', open + 1);
+            if (close < 0) {
+                return false;
+            }
+            String inner = s.substring(open + 1, close);
+            if (!inner.isEmpty() && inner.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                return true;
+            }
+            open = s.indexOf('{', close + 1);
+        }
+        return false;
     }
 
     private String apiKey(ModelRequest req) {

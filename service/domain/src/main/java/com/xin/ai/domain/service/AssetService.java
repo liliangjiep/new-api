@@ -258,6 +258,66 @@ public class AssetService {
         return e;
     }
 
+    /**
+     * 登记 AI 生成产物 —— 任务成功后把上游返回的 URL 落成资产行。
+     *
+     * <p>行内注释12：为什么需要这一步 ——
+     * 此前生成成功后只有 task.result_urls 一串裸 URL，既不在资产库、
+     * 也不带 source=ai 标记。后果有三：
+     * 1) 资产页 / AssetPickerModal 的「AI生成的」筛选永远为空；
+     * 2) 用户想复用自己刚生成的图，只能重新上传一次；
+     * 3) 发现流（社区）没有真实作品源。
+     * 这里把产物登记为 source=ai 的资产，并回传 asset_id 供前端做「加入资产库」。
+     *
+     * <p>行内注释12.1：URL 已是上游的公网地址（ToAPIs 返回 files.toapis.cn 的链接），
+     * 直接存即可，不需要再下载转存 —— 避免在后端拉一遍大文件。
+     */
+    public List<Map<String, Object>> registerGenerated(String userId, String taskId, String title,
+            String kind, List<String> urls) {
+        List<Map<String, Object>> created = new ArrayList<>();
+        if (urls == null || urls.isEmpty()) {
+            return created;
+        }
+        String safeKind = normalizeKind(kind, "", title);
+        int index = 0;
+        for (String url : urls) {
+            if (url == null || url.isBlank()) {
+                continue;
+            }
+            index++;
+            String id = "ast_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+            String name = (title == null || title.isBlank() ? "生成结果" : title)
+                    + (urls.size() > 1 ? " " + index : "");
+            store.put(T_ASSETS, id, Rows.row(
+                    "id", id, "user_id", userId,
+                    "name", name,
+                    "kind", safeKind,
+                    "size", 0,
+                    "content_type", contentTypeOf(safeKind),
+                    "etag", "",
+                    "group", "",
+                    "tags", List.of(),
+                    // 行内注释12.2：source=ai —— 资产库「AI生成的」筛选靠这个标记。
+                    "source", "ai",
+                    "thumb", url,
+                    "url", url,
+                    "duration", 0,
+                    "task_id", taskId,
+                    "created_at", Times.full(Times.now())));
+            created.add(view(store.find(T_ASSETS, id).orElse(Map.of())));
+        }
+        return created;
+    }
+
+    /** 产物 content_type —— 按 kind 推断。 */
+    private String contentTypeOf(String kind) {
+        return switch (kind) {
+            case "video" -> "video/mp4";
+            case "audio" -> "audio/mpeg";
+            default -> "image/png";
+        };
+    }
+
     // 行内注释10：视图装配 —— 字段名与前端契约一致。
     private Map<String, Object> view(Map<String, Object> a) {
         return Rows.row(

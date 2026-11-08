@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { WorkspaceShell } from "@/components/features/WorkspaceShell";
 import { useToast } from "@/components/features/ToastHost";
 import { Button, Textarea } from "@/components/ui/primitives";
@@ -9,6 +8,7 @@ import { Badge } from "@/components/ui/surfaces";
 import { Send, Square, RotateCcw, Plus, Paperclip, Sparkles, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { chatStream, listSessions, listSkills, listMessages, type AgentSession, type AgentSkill } from "@/lib/backend/agent";
+import { QueryParamBridge } from "@/components/providers/QueryParamBridge";
 import { ApiError } from "@/lib/api";
 
 const AGENT_PINNED = {
@@ -30,7 +30,6 @@ const FALLBACK_SKILLS = ["智能编导", "视频生成", "图片生成", "字幕
 
 export default function AgentCloudPage() {
   const { push } = useToast();
-  const searchParams = useSearchParams();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -82,13 +81,6 @@ export default function AgentCloudPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const sid = searchParams.get("session");
-    if (!sid) return;
-    setSessionId(sid);
-    void loadSessionMessages(sid);
-  }, [searchParams, loadSessionMessages]);
 
   const send = useCallback(
     async (text?: string) => {
@@ -183,6 +175,13 @@ export default function AgentCloudPage() {
 
   return (
     <WorkspaceShell pinned={AGENT_PINNED}>
+      <QueryParamBridge
+        name="session"
+        onValue={(sid) => {
+          setSessionId(sid);
+          void loadSessionMessages(sid);
+        }}
+      />
       <div className="flex min-h-0 flex-1 flex-col">
         {/* 顶栏 */}
         <div className="flex shrink-0 items-center gap-2 border-b border-line bg-background px-4 py-2.5 sm:px-6">

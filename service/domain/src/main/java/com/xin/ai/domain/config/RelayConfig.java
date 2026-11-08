@@ -51,10 +51,11 @@ public class RelayConfig {
             RelayConfigService relayConfig) {
         return new com.xin.ai.adapters.router.ChannelRouter.CircuitStore() {
             @Override
-            public com.xin.ai.adapters.router.ChannelRouter.State load(String channelId) {
+            public com.xin.ai.adapters.router.ChannelRouter.CircuitState load(String channelId) {
                 RelayConfigService.CircuitState st = relayConfig.circuitState(channelId);
                 return st == null ? null
-                        : new com.xin.ai.adapters.router.ChannelRouter.State(st.state(), st.consecutiveFailures());
+                        : new com.xin.ai.adapters.router.ChannelRouter.CircuitState(
+                                st.state(), st.consecutiveFailures(), st.openUntilEpochMillis());
             }
 
             @Override
@@ -63,8 +64,9 @@ public class RelayConfig {
             }
 
             @Override
-            public void onFailure(String channelId, int consecutiveFailures, int threshold) {
-                relayConfig.markChannelFailure(channelId, consecutiveFailures, threshold);
+            public void onFailure(String channelId, int consecutiveFailures, int threshold,
+                    long openUntilEpochMillis) {
+                relayConfig.markChannelFailure(channelId, consecutiveFailures, threshold, openUntilEpochMillis);
             }
         };
     }

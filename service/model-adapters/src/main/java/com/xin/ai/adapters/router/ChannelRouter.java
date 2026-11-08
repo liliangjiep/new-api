@@ -29,17 +29,23 @@ public class ChannelRouter {
     /** 熔断状态持久化接口 —— 由 domain 层用 JdbcTemplate 实现。 */
     public interface CircuitStore {
         /** 读熔断状态；返回 null 表示没记录。 */
-        State load(String channelId);
+        CircuitState load(String channelId);
 
         /** 记一次成功。 */
         void onSuccess(String channelId);
 
-        /** 记一次失败（传入累计失败次数与阈值）。 */
-        void onFailure(String channelId, int consecutiveFailures, int threshold);
+        /** 记一次失败（传入累计失败次数、阈值、熔断到期时间戳）。 */
+        void onFailure(String channelId, int consecutiveFailures, int threshold, long openUntilEpochMillis);
     }
 
-    /** 熔断状态值对象。 */
-    public record State(String state, int consecutiveFailures) {
+    /**
+     * 熔断状态值对象（带到期时间）。
+     * 行内注释5.6：为什么要加「到期时间」——
+     *             只有 state 没有到期时间时，落库的 open 是一个<b>无期限</b>标记：
+     *             谁都不知道它什么时候该恢复。本地内存冷却期又只活在单进程里，
+     *             重启就丢。带上 openUntil 之后，多实例共享的是同一条「到点恢复」的语义。
+     */
+    public record CircuitState(String state, int consecutiveFailures, long openUntilEpochMillis) {
         public boolean isOpen() {
             return "open".equalsIgnoreCase(state);
         }
@@ -67,6 +73,11 @@ public class ChannelRouter {
     private final Map<String, Long> openUntil = new ConcurrentHashMap<>();
     /** channel_id → 最近一次成功的站（sticky 优先）。 */
     private final Map<String, Long> lastGood = new ConcurrentHashMap<>();
+    /**
+     * 处于「半开探测」状态的站 —— 熔断已到期、正在放一个探测请求过去。
+     * 行内注释5.7：探测期间该站只应有一个在途请求，避免冷却一到期就被并发打爆。
+     */
+    private final java.util.Set<String> probing = ConcurrentHashMap.newKeySet();
     /** 熔断状态落库器 —— 可为空（纯内存模式）。 */
     private volatile CircuitStore circuitStore;
 
@@ -110,9 +121,19 @@ public class ChannelRouter {
 
     /**
      * 该站当前是否处于熔断冷却期。
-     * 行内注释5.2：判定顺序 —— 先看内存冷却到期（没到就是 open），
-     *             到了再查落库状态：落库是 open 说明别的实例也把它熔断了，继续等；
-     *             落库是 closed 说明半开探测时机到了，清计数放行。
+     *
+     * <p>行内注释5.2：判定顺序 —— 先看内存冷却窗口（没到就是 open）；
+     * 内存窗口过了再查落库状态：落库是 open 说明别的实例也把它熔断了，
+     * 此时按落库的 {@code circuit_open_until} 到期时间判定。
+     *
+     * <p>行内注释5.2.1：此处曾经是<b>永久熔断</b>的根源 ——
+     * 原实现只要落库状态是 open 就无条件执行
+     * {@code openUntil.put(channelId, now + COOLDOWN_MS)} 并返回 true，
+     * 而这个方法在每次任务路由时都会被调用，等于每调用一次就把冷却窗口往后推 60 秒，
+     * 窗口永远不会到期 → 通道被熔断后再也回不来（实测 ch_toapis 熔断后所有生成任务
+     * 全部 channel.all_failed，手工把 circuit_state 改回 closed 后任务立刻成功）。
+     * 现在落库带明确的「熔断到期时间」，到点即半开放行一次探测，
+     * 成功则关闸，失败则重新熔断并顺延窗口。
      */
     public boolean isOpen(String channelId) {
         if (channelId == null) {
@@ -123,32 +144,49 @@ public class ChannelRouter {
         if (until != null && now <= until) {
             return true;
         }
-        // 行内注释5.3：落库状态 —— 多实例共享的熔断标记。
+        // 行内注释5.3：落库状态 —— 多实例共享的熔断标记与到期时间。
         CircuitStore store = circuitStore;
         if (store != null) {
-            State st = store.load(channelId);
+            CircuitState st = store.load(channelId);
             if (st != null && st.isOpen()) {
-                // 行内注释5.4：落库说 open 但本地冷却已过 —— 说明是别的实例熔断的，
-                //             继续按冷却时长等，避免所有实例同时猛打一个坏站。
-                openUntil.put(channelId, now + COOLDOWN_MS);
-                return true;
+                long persistedUntil = st.openUntilEpochMillis();
+                // 行内注释5.2.2：落库还没写到期时间（老数据 / 手工改库）——
+                //             当场开一个完整窗口，避免放行一个刚熔断的站。
+                if (persistedUntil <= 0L) {
+                    persistedUntil = now + COOLDOWN_MS;
+                }
+                if (now < persistedUntil) {
+                    openUntil.put(channelId, persistedUntil);
+                    return true;
+                }
+                // 行内注释5.2.3：落库熔断已到期 —— 半开，放一个探测请求过去。
+                //             成功 → recordSuccess 落库 closed；
+                //             失败 → recordFailure 重新落库 open 并顺延窗口。
+                // 行内注释5.2.4：add 返回 false 说明已有一个探测在途 ——
+                //             本次跳过该站，避免冷却一到期就被并发打爆。
+                if (!probing.add(channelId)) {
+                    return true;
+                }
+                return false;
             }
         }
         if (until != null) {
             // 行内注释5.5：冷却到期 —— 半开，清掉熔断标记让下一次尝试重新探测。
             openUntil.remove(channelId);
-            failures.remove(channelId);
         }
         return false;
     }
 
-    /** 记录一次成功 —— 熔断计数清零，标记为 sticky 首选站。 */
+    /**
+     * 记录一次成功 —— 熔断计数清零，标记为 sticky 首选站。
+     */
     public void recordSuccess(String channelId) {
         if (channelId == null) {
             return;
         }
         failures.remove(channelId);
         openUntil.remove(channelId);
+        probing.remove(channelId);
         lastGood.put(channelId, System.currentTimeMillis());
         CircuitStore store = circuitStore;
         if (store != null) {
@@ -158,19 +196,28 @@ public class ChannelRouter {
 
     /**
      * 记录一次失败 —— 连续失败达阈值则熔断该站。
+     *
+     * <p>行内注释5.8：半开探测失败时必须<b>重新熔断</b>，而不是从失败计数 1 重来 ——
+     * 探测前失败计数已经被清掉了（否则计数会无限增长），
+     * 若按普通失败处理，计数变成 1 < 阈值，坏站就退出熔断状态被反复放行。
+     * 这里用 probing 标记识别「这次失败来自半开探测」，直接续熔并顺延窗口。
      */
     public void recordFailure(String channelId) {
         if (channelId == null) {
             return;
         }
+        // 行内注释5.8.1：取出并清除探测标记 —— 这次失败是不是半开探测打回来的。
+        boolean fromProbe = probing.remove(channelId);
         int count = failures.computeIfAbsent(channelId, k -> new AtomicInteger()).incrementAndGet();
-        if (count >= FAILURE_THRESHOLD) {
-            openUntil.put(channelId, System.currentTimeMillis() + COOLDOWN_MS);
+        long openUntilTs = 0L;
+        if (fromProbe || count >= FAILURE_THRESHOLD) {
+            openUntilTs = System.currentTimeMillis() + COOLDOWN_MS;
+            openUntil.put(channelId, openUntilTs);
             failures.remove(channelId);
         }
         CircuitStore store = circuitStore;
         if (store != null) {
-            store.onFailure(channelId, count, FAILURE_THRESHOLD);
+            store.onFailure(channelId, count, FAILURE_THRESHOLD, openUntilTs);
         }
     }
 
@@ -241,10 +288,13 @@ public class ChannelRouter {
         m.put("sticky", lastGood.containsKey(channelId));
         CircuitStore store = circuitStore;
         if (store != null) {
-            State st = store.load(channelId);
+            CircuitState st = store.load(channelId);
             if (st != null) {
                 m.put("circuit_state", st.state());
                 m.put("persisted_failures", st.consecutiveFailures());
+                // 行内注释5.9：熔断到期时间（毫秒）—— 0 表示未熔断。
+                //             后台据此显示「还有 N 秒自动恢复」。
+                m.put("circuit_open_until", st.openUntilEpochMillis());
             }
         }
         return m;
